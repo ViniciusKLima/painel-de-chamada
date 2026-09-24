@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Go
+/backend/api
+/backend/main
+/backend/tmp/
+*.exe
+*.exe~
+*.test
+
+# Dados reais de agendamento (CPF, telefone, nome) — nunca versionar planilhas de produção/piloto
+agendamentos-*.xlsx
+agendamentos-*.csv
+*.xlsx
+*.csv
+!frontend/**/*.csv
+
+# Arquivo solto na raiz com o que parecem ser telefones reais extraídos da planilha — nunca
+# versionar (achado ao preparar o repositório pra git, 24/09).
+/text
+
+.DS_Store
+
+# Estado de execução do agente (sessão/PID), não é conteúdo do projeto — `.claude/skills/`
+# continua versionado normalmente, é documentação de produto real.
+.claude/scheduled_tasks.lock

@@ -1,0 +1,2048 @@
+/* Identidade visual do Painel de Chamada — ver skill `.claude/skills/identidade-visual`
+   pra decisões de design (paleta, tipografia, escala de espaçamento) e a razão de cada
+   uma. Não escolher cor/fonte/medida nova sem checar a skill primeiro. */
+:root {
+  color-scheme: light;
+  --fonte-base: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fonte-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Superfícies */
+  --cor-fundo: #f2f1ec;
+  --cor-superficie: #ffffff;
+  --cor-texto: #182428;
+  --cor-texto-suave: #5c6d70;
+  --cor-borda: #dce3e0;
+
+  /* Marca — cabeçalho e elementos de identidade (não usar em botão/texto de conteúdo) */
+  --cor-marca: #0e2e38;
+  --cor-marca-clara: #164a58;
+  --cor-marca-texto: #eaf3f2;
+  --cor-marca-texto-suave: rgba(234, 243, 242, 0.72);
+
+  /* Ação — botões primários, links, foco */
+  --cor-primaria: #146c8c;
+  --cor-primaria-forte: #0f5670;
+
+  /* Semânticas de status, cada uma com par texto/fundo pra chip e aviso */
+  --cor-sucesso: #2f8f5b;
+  --cor-sucesso-fundo: #e3f3ea;
+  --cor-erro: #b3261e;
+  --cor-erro-fundo: #fbe7e5;
+  --cor-aviso: #a1660a;
+  --cor-aviso-fundo: #fbeeda;
+  --cor-info: #146c8c;
+  --cor-info-fundo: #e4f1f5;
+  --cor-encaixe: #5b3aa6;
+  --cor-encaixe-fundo: #ece6fa;
+
+  /* Hover neutro e suave (22/09) — só pra indicar "isso aqui é clicável/está em foco",
+     nunca pra chamar atenção. Reclamação direta do dono do produto: hover de linha de
+     tabela estava forte demais usando a mesma cor do cabeçalho da tabela. */
+  --cor-hover: rgba(14, 46, 56, 0.045);
+
+  /* Escala de espaçamento — usar estes valores em vez de números soltos */
+  --espaco-1: 4px;
+  --espaco-2: 8px;
+  --espaco-3: 12px;
+  --espaco-4: 16px;
+  --espaco-5: 24px;
+  --espaco-6: 32px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Reserva o espaço da barra de rolagem sempre, tenha scroll ou não (22/09) — sem isso, uma
+   tela que passa a caber sem rolar "empurra" o conteúdo alguns pixels pro lado (a barra
+   suportava, some, o conteúdo centralizado ganha espaço) — trocando de aba entre uma lista
+   longa e uma curta, dava pra ver o conteúdo pular de lugar. `scrollbar-gutter: stable`
+   sozinho não se mostrou confiável no elemento raiz (testado ao vivo — o gutter colapsava
+   de volta assim que o conteúdo cabia sem rolar); `overflow-y: scroll` é a técnica clássica
+   que garante o espaço reservado sempre, em qualquer navegador. */
+html {
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+body {
+  margin: 0;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font-family: var(--fonte-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--espaco-2);
+}
+
+/* Números tabulares numa fonte monoespaçada (protocolo, horário, contadores) — detalhe de
+   identidade "civic-tech": alinha em coluna e diferencia dado numérico de texto comum. */
+.numerico {
+  font-family: var(--fonte-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tela-central {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--espaco-5);
+}
+
+.cartao {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04), 0 8px 24px rgba(14, 46, 56, 0.05);
+  padding: var(--espaco-5) var(--espaco-5);
+  margin-bottom: var(--espaco-4);
+  max-width: 480px;
+  width: 100%;
+}
+
+.pagina .cartao {
+  max-width: none;
+}
+
+.cartao h1 {
+  margin-top: 0;
+}
+
+.cartao h2 {
+  font-size: 1.1rem;
+}
+
+.cartao h3 {
+  font-size: 0.98rem;
+  color: var(--cor-texto);
+}
+
+/* Aviso informativo (neutro/info) — separado semanticamente de "atrasado" (aviso amarelo
+   de status), que agora vive só nos chips/linhas de tabela. Uso restrito a informação
+   dinâmica/funcional de verdade (resultado de uma ação, motivo de um bloqueio) — nunca pra
+   descrever o que uma tela ou seção já deixa óbvio pelo título/colunas (ver skill
+   `identidade-visual`, regra "texto sem função"). */
+.aviso {
+  font-size: 0.85rem;
+  color: var(--cor-primaria-forte);
+  background: var(--cor-info-fundo);
+  padding: var(--espaco-2) var(--espaco-3);
+  border-radius: 8px;
+}
+
+/* Texto de apoio discreto (22/09) — pra esclarecer um termo/regra de negócio genuinamente
+   ambíguo (ex.: o que "tolerância de atendimento" cobre) ou mostrar um dado secundário
+   (ex.: "Serviço: X" abaixo do nome da grade), sem o peso visual de uma caixa `.aviso`. Não
+   usar pra restated o óbvio — se o título/rótulo já diz a mesma coisa, não precisa de `.dica`
+   nenhuma, só remover. */
+.dica {
+  font-size: 0.85rem;
+  color: var(--cor-texto-suave);
+  margin: -2px 0 var(--espaco-2);
+}
+
+.erro {
+  color: var(--cor-erro);
+  font-size: 0.9rem;
+}
+
+/* Notificações (toast), reorganizadas em sistema único (21/09) — antes cada tela desenhava
+   sua própria ".mensagem" fixa no topo, sempre verde mesmo em erro, e que nunca desaparecia
+   sozinha ("ficava presa" na tela, reclamação direta do dono do produto). Agora: empilhadas
+   no canto inferior direito (não disputa espaço com o cabeçalho/abas), cor por tipo, some
+   sozinha depois de alguns segundos, e dá pra fechar na hora com o X. Ver
+   `componentes/Notificacoes.tsx`. */
+.notificacoes-area {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  z-index: 400;
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.notificacao {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--cor-superficie);
+  box-shadow: 0 6px 20px rgba(14, 46, 56, 0.18);
+  border-left: 4px solid var(--cor-sucesso);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  animation: notificacao-entrar 0.2s ease;
+}
+
+.notificacao span {
+  flex: 1;
+}
+
+.notificacao-sucesso {
+  border-left-color: var(--cor-sucesso);
+}
+
+.notificacao-sucesso svg:first-child {
+  color: var(--cor-sucesso);
+}
+
+.notificacao-erro {
+  border-left-color: var(--cor-erro);
+}
+
+.notificacao-erro svg:first-child {
+  color: var(--cor-erro);
+}
+
+.notificacao svg {
+  flex-shrink: 0;
+}
+
+.notificacao-fechar {
+  background: none;
+  border: none;
+  padding: 2px;
+  width: auto;
+  height: auto;
+  color: #9ca3af;
+}
+
+.notificacao-fechar:hover {
+  color: var(--cor-texto);
+}
+
+@keyframes notificacao-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Bug real corrigido (23/09): um `<select>` nativo se auto-dimensiona pelo texto da SUA
+   opção mais larga (ex.: nome de grade importado da planilha, "CRAS - Jardim Jordão/
+   Guararapes (ENCAIXE)") — sem limite, isso estourava a largura de qualquer form dentro de
+   um modal ou cartão estreito em mobile. `max-width: 100%` + `min-width: 0` em TODO campo
+   (não só select) garante que nenhum controle de formulário nunca é mais largo que o
+   container dele, mesmo quando o conteúdo/opções são mais largos — o texto simplesmente
+   corta dentro da própria caixa em vez de empurrar o layout. */
+input,
+select,
+button {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--cor-borda);
+  color: var(--cor-texto);
+  max-width: 100%;
+  min-width: 0;
+}
+
+button {
+  background: var(--cor-primaria);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s ease;
+}
+
+button:not(:disabled):hover {
+  background: var(--cor-primaria-forte);
+}
+
+/* ARMADILHA DE ESPECIFICIDADE (22/09, bug real encontrado em `.linha-guiche-resumo`,
+   `.botao-voltar`, `.aba` e `.quadro-guiche`): como esse seletor acima já é
+   `button:not(:disabled):hover` (elemento + pseudo-classe + pseudo-classe), um `<button>`
+   customizado com `.minha-classe:hover { background: outra-coisa; }` PERDE pra essa regra —
+   uma classe + pseudo-classe é menos específico que elemento + duas pseudo-classes. O
+   resultado visual é o botão customizado "piscando" um fundo teal escuro sólido no hover,
+   ignorando por completo a cor pretendida. Qualquer `:hover` custom em cima de um `<button>`
+   PRECISA repetir o padrão `:not(:disabled)` pra ganhar a mesma especificidade — ver
+   `.acesso-secundario:not(:disabled):hover` como o primeiro lugar que já fazia isso certo. */
+
+button svg {
+  flex-shrink: 0;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+form.cartao input,
+form.cartao button {
+  width: 100%;
+  margin-top: var(--espaco-2);
+}
+
+.acessos-rapidos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: var(--espaco-4);
+}
+
+.acessos-rapidos button {
+  padding: 13px;
+  font-size: 1.02rem;
+}
+
+.acesso-secundario {
+  background: none;
+  color: var(--cor-primaria);
+  border: 1px dashed var(--cor-borda);
+  margin-top: 4px;
+}
+
+.acesso-secundario:not(:disabled):hover {
+  background: var(--cor-info-fundo);
+}
+
+.pagina {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: var(--espaco-4);
+}
+
+.pagina-larga {
+  max-width: 1280px;
+}
+
+/* Cabeçalho compartilhado (recepção/atendente/gestor) — reorganizado em 2 barras (23/09, ver
+   nota em componentes/Cabecalho.tsx pro motivo: o desenho antigo de 3 blocos numa grid
+   `1fr auto 1fr` estourava/empilhava em telas estreitas porque a coluna do meio crescia com
+   o conteúdo sem limite). Cada barra só tem 2 blocos (nunca 3), sempre em linha, em qualquer
+   largura — `min-width: 0` + reticências nos dois lados garantem que texto longo trunca em
+   vez de forçar a barra a ficar mais larga que a tela. Renderizado como irmão de `.pagina`,
+   não filho (22/09) — assim ocupa a largura real da viewport (100vw). */
+.cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-4);
+  width: 100%;
+  padding: var(--espaco-3) var(--espaco-5);
+  background: linear-gradient(160deg, var(--cor-marca-clara), var(--cor-marca));
+  color: var(--cor-marca-texto);
+}
+
+.cabecalho-marca {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cabecalho-marca-produto,
+.cabecalho-marca-prefeitura {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cabecalho-marca-produto {
+  font-weight: 800;
+  font-size: 1.08rem;
+  letter-spacing: -0.01em;
+}
+
+.cabecalho-marca-prefeitura {
+  font-size: 0.74rem;
+  color: var(--cor-marca-texto-suave);
+  margin-top: 1px;
+}
+
+.cabecalho-acoes {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Subcabeçalho (23/09) — barra branca logo abaixo da principal, só com quem está logado
+   (esquerda) e a unidade (direita). Existe pra tirar esse conteúdo da barra de marca sem
+   perder a informação — ver nota em Cabecalho.tsx. */
+.subcabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  width: 100%;
+  padding: 8px var(--espaco-5);
+  margin-bottom: var(--espaco-2);
+  background: var(--cor-superficie);
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.subcabecalho-usuario,
+.subcabecalho-unidade {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subcabecalho-usuario {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-suave);
+}
+
+.subcabecalho-unidade {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--cor-texto);
+  text-align: right;
+}
+
+.cabecalho-acoes select {
+  font-size: 0.88rem;
+}
+
+.cabecalho-acoes button {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--cor-marca-texto);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  font-weight: 500;
+}
+
+.cabecalho-acoes button:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Guichê atual + "trocar" fundidos num botão só (22/09) — o próprio indicador de guichê é
+   clicável e reabre o modal de seleção; antes eram dois elementos separados lado a lado
+   (um `span` só-visual + um botão "Trocar"). Seletor aninhado em `.cabecalho-acoes` de
+   propósito: precisa vencer a especificidade de `.cabecalho-acoes button` genérico. */
+.cabecalho-acoes .cabecalho-guiche-atual {
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.cabecalho-acoes .cabecalho-guiche-atual:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Telas estreitas (23/09): NUNCA empilhar em coluna — só aperta espaçamento/fonte pra
+   garantir que a barra sempre cabe numa única linha (os textos reais aqui são curtos —
+   "Sair", "Guichê 2" — então cabem de sobra só com um respiro menor). */
+@media (max-width: 480px) {
+  .cabecalho, .subcabecalho {
+    padding-left: var(--espaco-3);
+    padding-right: var(--espaco-3);
+  }
+  .cabecalho-marca-produto {
+    font-size: 0.95rem;
+  }
+  .cabecalho-marca-prefeitura {
+    font-size: 0.68rem;
+  }
+  .cabecalho-acoes {
+    gap: 6px;
+  }
+  .cabecalho-acoes button {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+}
+
+.linha {
+  display: flex;
+  gap: var(--espaco-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Tabelas — mais identidade (21/09): cabeçalho com fundo tintado na cor de marca, listras
+   sutis pra facilitar leitura em listas longas (recepção passa de 100 linhas), linha realça
+   ao passar o mouse. */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--espaco-2);
+}
+
+th {
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--cor-info-fundo);
+  color: var(--cor-marca);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+th:first-child {
+  border-top-left-radius: 8px;
+}
+
+th:last-child {
+  border-top-right-radius: 8px;
+}
+
+td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+tbody tr:nth-child(even) {
+  background: rgba(14, 46, 56, 0.02);
+}
+
+tbody tr:hover {
+  background: var(--cor-hover);
+}
+
+.acoes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.acoes button {
+  font-size: 0.85rem;
+  padding: 5px 10px;
+}
+
+.resultado-upload {
+  margin-top: var(--espaco-4);
+}
+
+/* Painel de TV — tema branco minimalista (decisão 20/09: contraste alto, sem fundo escuro).
+   100vw/100vh fixo e sem scroll na página — só a lista interna rola se precisar.
+   Atualizado 22/09: --painel-fundo passou a ser sobrescrito em runtime com a cor clara/
+   secundária da prefeitura (ver frontend/src/tema.ts, aplicarTemaPainel) — os valores aqui
+   são só o default antes da primeira resposta da API chegar. --painel-card virou branco
+   puro, de propósito: os dois blocos de conteúdo (chamada atual e tabela) precisam
+   contrastar visivelmente contra o fundo colorido. */
+:root {
+  --painel-fundo: #eef3f4;
+  --painel-texto: #182428;
+  --painel-texto-suave: #5c6d70;
+  --painel-borda: #e2e8f0;
+  --painel-card: #ffffff;
+  --painel-acento: var(--cor-primaria);
+  --painel-sombra: 0 10px 34px rgba(14, 46, 56, 0.09);
+}
+
+.painel-tv {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--painel-fundo);
+  color: var(--painel-texto);
+  display: flex;
+  flex-direction: column;
+  padding: clamp(16px, 2.5vw, 40px);
+  font-family: var(--fonte-base);
+  box-sizing: border-box;
+}
+
+.painel-tv-gate {
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.painel-tv-topo {
+  flex: 0 0 auto;
+  font-size: clamp(1.1rem, 2.4vw, 1.8rem);
+  font-weight: 700;
+  color: var(--painel-texto-suave);
+  margin-bottom: clamp(12px, 2vw, 24px);
+  text-align: center;
+}
+
+/* Corpo com transição animada entre os dois modos — mesma estrutura sempre montada, só
+   as proporções/opacidade mudam, pra permitir a animação (decisão 20/09). */
+.painel-tv-corpo {
+  display: flex;
+  flex: 1;
+  gap: 24px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* Transição escalonada, não simultânea (achado 20/09): opacidade e largura mudando juntas
+   faziam o nome aparecer "espremido" — texto já visível numa caixa ainda estreita virava
+   uma coluna de letras soltas por uma fração de segundo. Ao entrar, a caixa cresce PRIMEIRO
+   e só depois o texto aparece (opacity com delay); ao sair, o texto some PRIMEIRO e só
+   depois a caixa encolhe. */
+/* modo-aguardando (23/09) reaproveita a mesma proporção 70/30 do modo-ativo pro espaço geral
+   — só muda o QUE aparece dentro de .chamada-atual (ver PainelTV.tsx: um .aguardando-grade
+   com até 4 blocos). Ajustado depois (mesma rodada): os blocos não devem viver "dentro" de
+   um cartão branco único — cada um É seu próprio cartão branco independente, direto sobre o
+   fundo tintado (pedido explícito: "não quero eles sendo um bloco dentro do bloco branco,
+   quero que eles sejam blocos brancos independentes"). Por isso .chamada-atual, no modo
+   aguardando, perde o próprio fundo/borda/sombra/padding (vira só um contêiner de
+   posicionamento) — quem carrega a aparência de cartão agora é cada .aguardando-bloco. */
+.painel-tv-corpo.modo-ativo .chamada-atual,
+.painel-tv-corpo.modo-aguardando .chamada-atual {
+  flex: 0 0 66%;
+  opacity: 1;
+  transition: flex-basis 0.5s ease, padding 0.5s ease, opacity 0.35s ease 0.3s;
+}
+
+.painel-tv-corpo.modo-ativo .chamada-atual {
+  padding: clamp(20px, 3vw, 56px);
+}
+
+.painel-tv-corpo.modo-aguardando .chamada-atual {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.painel-tv-corpo.modo-ativo .historico,
+.painel-tv-corpo.modo-aguardando .historico {
+  flex: 0 0 32%;
+  margin: 0;
+}
+
+.painel-tv-corpo.modo-descanso .chamada-atual {
+  flex: 0 0 0%;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, flex-basis 0.45s ease 0.2s, padding 0.45s ease 0.2s;
+}
+
+.painel-tv-corpo.modo-descanso .historico {
+  flex: 0 0 min(760px, 94%);
+  margin: 0 auto;
+}
+
+.chamada-atual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  overflow: hidden;
+  background: var(--painel-card);
+  border: 1px solid var(--painel-borda);
+  border-radius: 24px;
+  box-shadow: var(--painel-sombra);
+  text-align: center;
+  min-width: 0;
+}
+
+/* Ordem confirmada 20/09: nome é a informação principal (maior, no topo), protocolo é
+   complemento logo abaixo, guichê por último. Fonte com clamp mais conservador pra caber
+   em 100vh mesmo com nomes longos, sem quebrar o layout. */
+.chamada-atual-nome {
+  font-size: clamp(1.8rem, 5vw, 3.6rem);
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+/* Protocolo e guichê lado a lado (22/09, pedido: "protocolo maior e o guichê também, sem
+   ser exagerado") — separados por um traço vertical em vez de duas linhas empilhadas, pra
+   dar mais peso aos dois sem alongar o bloco verticalmente. */
+.chamada-atual-linha {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: clamp(14px, 2vw, 28px);
+  flex-wrap: wrap;
+}
+
+.chamada-atual-protocolo {
+  font-family: var(--fonte-mono);
+  font-size: clamp(1.3rem, 3.2vw, 2.1rem);
+  font-weight: 700;
+  color: var(--painel-acento);
+  font-variant-numeric: tabular-nums;
+}
+
+.chamada-atual-guiche {
+  font-size: clamp(1.2rem, 2.8vw, 1.9rem);
+  font-weight: 700;
+  color: var(--painel-texto-suave);
+  position: relative;
+  padding-left: clamp(14px, 2vw, 28px);
+}
+
+.chamada-atual-guiche::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 2px;
+  background: var(--painel-borda);
+}
+
+.chamada-atual-vazio {
+  font-size: clamp(1.3rem, 3vw, 2rem);
+  color: var(--painel-texto-suave);
+}
+
+/* Modo "aguardando" (23/09, pedido do dono do produto): quando não há nenhuma chamada nova
+   em destaque, até 4 pessoas já chamadas (não órfãs, ainda dentro do prazo) ficam visíveis
+   como blocos aqui em vez de simplesmente desaparecer pra tabela — sem narração, sem barra
+   de tempo (não há "exibição" com prazo pra essas, só presença contínua enquanto o
+   atendente ainda está esperando por elas).
+   Layout ajustado 23/09 (pedido explícito de arranjo por quantidade): 1 pessoa ocupa tudo;
+   2 empilham numa coluna só, mais recente em cima (PainelTV.tsx já inverte a ordem antes de
+   renderizar); 3 ficam 1 em cima (ocupando a largura toda) + 2 embaixo lado a lado; 4 viram
+   uma grade 2x2. Cada bloco reaproveita as classes da tabela padrão pro protocolo/guichê
+   (historico-protocolo/historico-guiche-pill, ver PainelTV.tsx) — nome, protocolo e guichê
+   empilhados em coluna dentro do bloco ("mesma estrutura do padrão", não uma tipografia
+   bespoke). O tamanho do texto se adapta à quantidade via as classes
+   aguardando-grade-1/2/3/4 abaixo — uma pessoa sozinha ganha mais destaque do que quando 4
+   dividem o espaço. */
+.aguardando-grade {
+  display: grid;
+  gap: clamp(12px, 2vw, 28px);
+  width: 100%;
+  height: 100%;
+}
+
+.aguardando-grade-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.aguardando-grade-2 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+.aguardando-grade-3,
+.aguardando-grade-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+/* 3 pessoas: a primeira (mais recente) ocupa a linha de cima inteira; as outras duas ficam
+   lado a lado embaixo — grade normal de 2 colunas cobriria só metade da largura na 1ª. */
+.aguardando-grade-3 .aguardando-bloco:nth-child(1) {
+  grid-column: 1 / span 2;
+}
+
+.aguardando-bloco {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: clamp(14px, 1.8vw, 28px);
+  border-radius: 24px;
+  /* Cartão branco independente (23/09), mesmo tratamento visual de .chamada-atual/.historico
+     — não é mais um tile colorido dentro de um cartão maior. */
+  background: var(--painel-card);
+  border: 1px solid var(--painel-borda);
+  box-shadow: var(--painel-sombra);
+  text-align: center;
+}
+
+.aguardando-nome {
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.aguardando-grade-1 .aguardando-nome { font-size: clamp(1.6rem, 4.2vw, 3rem); }
+.aguardando-grade-2 .aguardando-nome { font-size: clamp(1.3rem, 3.2vw, 2.2rem); }
+.aguardando-grade-3 .aguardando-nome { font-size: clamp(1.1rem, 2.6vw, 1.7rem); }
+.aguardando-grade-4 .aguardando-nome { font-size: clamp(0.95rem, 1.9vw, 1.35rem); }
+
+/* Protocolo/guichê dentro do bloco reaproveitam historico-protocolo/historico-guiche-pill —
+   os dois usam tamanho relativo (em/1.05em/0.95em) ao font-size do elemento pai, então basta
+   ajustar o font-size do PRÓPRIO bloco por quantidade pra tudo escalar junto. */
+.aguardando-grade-1 .aguardando-bloco { font-size: clamp(1rem, 2vw, 1.4rem); }
+.aguardando-grade-2 .aguardando-bloco { font-size: clamp(0.9rem, 1.6vw, 1.15rem); }
+.aguardando-grade-3 .aguardando-bloco { font-size: clamp(0.82rem, 1.4vw, 1rem); }
+.aguardando-grade-4 .aguardando-bloco { font-size: clamp(0.72rem, 1.2vw, 0.88rem); }
+
+/* Barra de contagem regressiva (22/09) — encolhe de 100% a 0% ao longo da duração real da
+   exibição (ver PainelTV.tsx, BarraTempo). scaleX em vez de width: anima na GPU, sem
+   recalcular layout a cada frame. */
+.chamada-atual-barra-fundo {
+  width: min(100%, 420px);
+  height: 8px;
+  border-radius: 999px;
+  background: var(--painel-borda);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.chamada-atual-barra-progresso {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--painel-acento);
+  transform-origin: left center;
+  animation-name: encolherBarraTempo;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes encolherBarraTempo {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.historico {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--painel-card);
+  border: 1px solid var(--painel-borda);
+  border-radius: 24px;
+  box-shadow: var(--painel-sombra);
+  padding: clamp(14px, 1.8vw, 26px);
+  box-sizing: border-box;
+  transition: flex-basis 0.6s ease, margin 0.6s ease;
+}
+
+.historico h2 {
+  flex: 0 0 auto;
+  color: var(--painel-texto-suave);
+  font-size: clamp(0.85rem, 1.3vw, 1.05rem);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
+}
+
+.historico-tabela {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Cabeçalho da "tabela" — mesmas colunas das linhas, fixo no topo enquanto só a lista rola.
+   Ajustado 23/09 (pedido: "deixe como uma tabela padrão", cabeçalho tinha a parte de baixo
+   arredondada por engano — igual ao <th> padrão do resto do site, só os cantos de CIMA
+   arredondam (ver regra `th:first-child`/`th:last-child` em index.css), e uma borda embaixo
+   costura ele na lista logo abaixo em vez de flutuar como uma pílula separada). Fundo trocado
+   de um color-mix com --painel-acento (ficava escuro/saturado demais, "clareie mais a linha
+   com cor azul") pra --painel-fundo puro — é literalmente o mesmo valor (corClara) que
+   --cor-info-fundo usa nas tabelas padrão do resto do sistema, só que no namespace --painel-*
+   (o painel nunca roda aplicarTemaPrefeitura, só aplicarTemaPainel, ver tema.ts) — mesma cor
+   de origem, mesmo resultado visual do "th" padrão. */
+.historico-cabecalho {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--painel-fundo);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid var(--painel-borda);
+  font-size: clamp(0.68rem, 1vw, 0.8rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--painel-texto-suave);
+  flex: 0 0 auto;
+}
+
+.historico ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Tabela (decisão 20/09, ajustada depois): nome e protocolo completos (só um nome sozinho
+   ficava pouco informativo; protocolo abreviado não ajudava porque todos começam igual) —
+   ambos com largura flexível e reticências se não couber, nunca estourando a linha.
+   Zebra sutil (22/09) — ajuda a acompanhar a linha em listas cheias (10 itens). */
+.historico li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  font-size: clamp(0.9rem, 1.4vw, 1.1rem);
+  border-bottom: 1px solid var(--painel-borda);
+}
+
+/* Zebra sutil e neutra (23/09) — era var(--painel-fundo) (o mesmo azul cheio do cabeçalho e
+   do fundo da página), forte demais pra zebra; trocado por um tint neutro bem leve, mesmo
+   espírito do `rgba(14, 46, 56, 0.02)` usado nas tabelas padrão do resto do sistema (só a cor
+   base mudou pra combinar com --painel-texto). */
+.historico li:nth-child(even) {
+  background: rgba(24, 36, 40, 0.035);
+}
+
+.historico-nome,
+.historico-protocolo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historico-nome {
+  font-weight: 600;
+}
+
+/* Protocolo maior e com peso (22/09, pedido: "número do protocolo maior") — usa a cor de
+   destaque, mesma lógica da chamada em evidência, pra ficar reconhecível de longe. */
+.historico-protocolo {
+  font-family: var(--fonte-mono);
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--painel-acento);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Guichê como selo/pílula (22/09, pedido: "guichê maior também") em vez de texto solto
+   alinhado à direita — mais fácil de bater o olho e achar rápido numa lista cheia. */
+.historico-guiche-pill {
+  justify-self: end;
+  font-weight: 700;
+  font-size: 0.95em;
+  color: var(--painel-acento);
+  background: color-mix(in srgb, var(--painel-acento) 12%, white);
+  padding: 5px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Animação de entrada quando uma chamada nova vira a primeira linha da tabela (decisão
+   20/09: "o nome entrando na tabela"). */
+@keyframes entrarNaTabela {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.historico li:first-child {
+  animation: entrarNaTabela 0.45s ease-out;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+/* Bolinha de cor (23/09) — pré-visualização das 2 cores de identidade de uma prefeitura, na
+   lista do admin e ao lado de cada campo de cor na tela de configuração. Cor em si vem
+   sempre inline (`style={{ background: hex }}`), já que é dado dinâmico por prefeitura. */
+.bolinha-cor {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--cor-borda);
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.bolinhas-cor-par {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+.chip.no_horario { background: var(--cor-sucesso-fundo); color: var(--cor-sucesso); }
+.chip.atrasado { background: var(--cor-aviso-fundo); color: var(--cor-aviso); }
+.chip.encaixe { background: var(--cor-encaixe-fundo); color: var(--cor-encaixe); }
+.chip.ausente { background: var(--cor-erro-fundo); color: var(--cor-erro); }
+
+/* Tela do atendente (20/09, ver skill regras-negocio-fila): grade de 3 blocos — chamando
+   agora (compartilhado) em cima à esquerda, sala de espera embaixo à esquerda, atendidos
+   por mim hoje (só consulta) à direita. */
+.grade-atendente {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: var(--espaco-4);
+}
+
+.bloco-chamando {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.bloco-espera {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.bloco-atendidos {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+@media (max-width: 900px) {
+  .grade-atendente {
+    grid-template-columns: 1fr;
+  }
+  .bloco-chamando, .bloco-espera, .bloco-atendidos {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+.chamado-meta {
+  font-size: 0.8rem;
+  color: var(--cor-texto-suave);
+  margin-top: 2px;
+}
+
+/* Título + ação de seção lado a lado (22/09) — usado em "Sala de espera" no atendente: o
+   botão "Chamar próximo" saiu de dentro do cabeçalho da tabela e virou uma ação de seção de
+   verdade, ao lado do título, como "Adicionar" já fica ao lado da busca na recepção. */
+.secao-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  margin-bottom: var(--espaco-1);
+}
+
+.secao-cabecalho h2 {
+  margin-bottom: 0;
+}
+
+/* Agrupamento por unidade -> grade na "Sala de espera" do atendente (23/09, auditoria de
+   multi-grade — "grades do mesmo local devem aparecer agrupadas visualmente, não como filas
+   independentes"). O título da unidade só aparece quando o atendente tem grades de MAIS de
+   uma unidade — com uma só, o agrupamento seria ruído visual sem informação nova. */
+.grupos-unidade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-5);
+}
+
+.grupo-unidade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+}
+
+.grupo-unidade-titulo {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-suave);
+  border-bottom: 1px solid var(--cor-borda);
+  padding-bottom: 4px;
+}
+
+.grupo-grade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  padding: var(--espaco-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: 12px;
+  background: var(--cor-fundo);
+}
+
+.grupo-grade-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  flex-wrap: wrap;
+}
+
+.grupo-grade-contagem {
+  color: var(--cor-texto-suave);
+  font-weight: 400;
+}
+
+.grupo-grade-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+}
+
+/* Indicador de guichê por grade (23/09) — substitui o antigo botão único
+   `.cabecalho-guiche-atual` do cabeçalho global (fazia sentido quando só existia UMA grade em
+   uso por vez). Cada grade resolve o próprio guichê aqui, sem travar as outras.
+   Especificidade: classe + :not(:disabled) vence o hover genérico de `button` (ver skill
+   identidade-visual, "armadilha de especificidade: hover custom num <button>"). */
+.pilula-guiche {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--cor-info-fundo);
+  color: var(--cor-primaria);
+  border: 1px solid var(--cor-borda);
+}
+
+.pilula-guiche:not(:disabled):hover {
+  background: var(--cor-hover);
+}
+
+/* Fundo branco só na tabela, não no bloco inteiro (22/09) — quando os blocos do atendente
+   perderam o `.cartao` em volta, a tabela ficou "flutuando" sem nenhuma superfície atrás,
+   só o cabeçalho tintado. O dono do produto confirmou que a tabela em si pode/deve ser
+   branca — só não queria a moldura em volta do título. Título e ação de seção continuam
+   soltos direto no fundo da página; só a tabela ganha essa superfície. */
+/* Bug real corrigido (23/09): `overflow: hidden` fazia uma tabela mais larga que o cartão
+   simplesmente CORTAR as últimas colunas (normalmente a de ação, com os ícones) em vez de
+   rolar — em mobile, a tabela inteira nunca aparecia entortada nem dava scroll lateral na
+   PÁGINA (o hidden impedia isso), mas as colunas da direita ficavam invisíveis e inclicáveis
+   sem nenhum aviso visual. `overflow-x: auto` deixa a PRÓPRIA tabela rolar horizontalmente
+   dentro do cartão quando não couber — nada foge do bloco, mas nada fica escondido também. */
+.tabela-cartao {
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04), 0 8px 24px rgba(14, 46, 56, 0.05);
+  overflow-x: auto;
+  /* Barra de rolagem fina (23/09) — reclamação real: em alguns monitores/zooms, um
+     arredondamento de sub-pixel faz a tabela ficar 1px "mais larga" que o cartão mesmo sem
+     nenhuma coluna cortada de verdade, e a barra clássica do Windows (~17px, sempre visível
+     quando há qualquer overflow, por menor que seja) aparecia onde não precisava. Uma barra
+     fina resolve os dois lados: continua funcional quando o scroll é necessário de verdade,
+     mas nunca mais chama atenção sozinha por 1px de diferença. */
+  scrollbar-width: thin;
+}
+
+.tabela-cartao::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tabela-cartao::-webkit-scrollbar-thumb {
+  background: var(--cor-borda);
+  border-radius: 999px;
+}
+
+.tabela-cartao table {
+  margin-top: 0;
+}
+
+/* Linha destacada (recepção) quando o horário previsto já passou e a pessoa ainda não
+   confirmou chegada — mesmo tom do chip "atrasado". */
+.linha-atrasada {
+  background: var(--cor-aviso-fundo) !important;
+}
+
+.celula-horario,
+.celula-guiche,
+.celula-prazo {
+  white-space: nowrap;
+}
+
+/* Coluna de ação em ícone único, sem texto — reorganização de telas (21/09) a partir do
+   desenho do dono do produto: recepção e atendente trocaram botões com texto por ícones
+   compactos nas colunas de ação das tabelas. */
+.coluna-acao {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.botao-icone {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.botao-icone-sucesso {
+  background: var(--cor-sucesso);
+}
+
+/* Ausência manual (23/09) — mesmo padrão do botão de sucesso, cor de perigo/erro. */
+.botao-icone-perigo {
+  background: var(--cor-erro);
+}
+
+/* Botão-ícone secundário (23/09) — pra ações utilitárias que não mudam dado nenhum (copiar
+   link, por ex.), distinto visualmente das ações primárias reais (confirmar chegada, marcar
+   presente, configurações...) que continuam sólidas na cor de ação. Contorno em vez de fundo
+   sólido ou fundo tintado — as duas outras opções soariam repetitivas com o resto da UI
+   (fundo tintado já é o padrão de `.chip`/`.aviso`/hover de linha). Precisa do `:not(:disabled)`
+   pra vencer a especificidade do `button:not(:disabled):hover` global — ver nota ao lado dele. */
+.botao-icone-secundario {
+  background: transparent;
+  color: var(--cor-primaria);
+  border: 1.5px solid var(--cor-primaria);
+}
+
+.botao-icone-secundario:not(:disabled):hover {
+  background: var(--cor-info-fundo);
+}
+
+/* Ícone estático (recepção): já confirmado, não é clicável — indicador visual só. */
+.botao-icone-estatico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--cor-sucesso);
+  border: 1px solid var(--cor-borda);
+}
+
+.acoes-icones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Botão de cooldown do rechamar (21/09) — antes era o ícone desabilitado com uma legenda
+   minúscula empilhada embaixo ("feio ali abaixo do botão", reclamação direta do dono do
+   produto). Agora é um único botão-pílula, mesma altura dos outros ícones da linha, com o
+   relógio e a contagem lado a lado — cabe na mesma coluna sem desalinhar a tabela. */
+.botao-cooldown {
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  color: var(--cor-texto-suave);
+  border: 1px solid var(--cor-borda);
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  gap: 6px;
+}
+
+/* Abas Recepção / Sala de espera (21/09) — recepção alterna entre quem ainda aguarda
+   chegada e quem já confirmou, com a opção de puxar alguém de volta na segunda aba. */
+.abas {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--cor-borda);
+  margin-bottom: var(--espaco-3);
+}
+
+.aba {
+  background: none;
+  color: var(--cor-texto-suave);
+  border: none;
+  border-radius: 0;
+  padding: 8px 4px;
+  margin-right: var(--espaco-5);
+  border-bottom: 2px solid transparent;
+  font-weight: 600;
+}
+
+/* Correção 23/09: a rodada anterior (22/09) só resolveu a especificidade pro `color`, mas
+   nunca declarou `background` aqui — como `.aba:not(:disabled):hover` (0,3,0) nem precisava
+   competir (não declarava a propriedade), o fundo colorido do `button:not(:disabled):hover`
+   global (`--cor-primaria-forte`, que agora segue a cor de destaque de cada prefeitura)
+   continuava aparecendo sozinho, com texto escuro por cima — "fundo da cor principal e a
+   fonte preta", nas palavras do dono do produto. Fundo cinza neutro, não mais nenhuma cor de
+   destaque nas abas. */
+.aba:not(:disabled):hover {
+  background: var(--cor-borda);
+  color: var(--cor-texto);
+}
+
+.aba-ativa {
+  color: var(--cor-primaria);
+  border-bottom-color: var(--cor-primaria);
+}
+
+/* Barra de busca + adicionar da recepção (21/09, replicando o desenho do dono do produto). */
+.barra-busca {
+  display: flex;
+  gap: 10px;
+  margin-bottom: var(--espaco-3);
+  flex-wrap: wrap;
+}
+
+/* Bug real corrigido (23/09): sem `min-width: 0`, o item flex não encolhia abaixo do
+   min-content do `<input>` (o tamanho intrínseco padrão do navegador pra um campo de texto,
+   maior do que parece) — em telas estreitas isso empurrava o botão "Adicionar" ao lado pra
+   fora da tela, causando scroll lateral. `flex-shrink: 0` no botão (ver `.barra-busca >
+   button`) garante que ele nunca é quem encolhe — só o campo de busca cede espaço. */
+.campo-busca {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 8px;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-suave);
+}
+
+.campo-busca input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 9px 0;
+  color: var(--cor-texto);
+}
+
+.barra-busca > button {
+  flex-shrink: 0;
+}
+
+.campo-busca input:focus {
+  outline: none;
+}
+
+/* Central de painéis do gestor (23/09) — grid de cartões, um por grade ativa, com busca
+   acima (reaproveita .barra-busca/.campo-busca). */
+.grade-paineis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--espaco-3);
+}
+
+.cartao-painel-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04);
+}
+
+.cartao-painel-hub-icone {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--cor-info-fundo);
+  color: var(--cor-primaria);
+}
+
+.cartao-painel-hub-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cartao-painel-hub-acoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.cartao-painel-hub-acoes button:first-child {
+  flex: 1;
+}
+
+/* Painel em foco (23/09) — a grade de cartões vira um iframe do painel escolhido, com uma
+   barra fina de voltar/tela cheia por cima. O iframe carrega a MESMA rota pública
+   /painel/:gradeId sem duplicar nada da lógica do painel-tv. Fica dentro do layout normal
+   do gestor (com o respiro de sempre) — "tela cheia" de verdade é o botão de Fullscreen,
+   que ignora esse layout e cobre a tela física inteira. */
+.pagina-gestor-painel-foco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+  height: 100%;
+}
+
+.painel-foco-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.painel-foco-iframe {
+  flex: 1;
+  min-height: 500px;
+  width: 100%;
+  border: 1px solid var(--cor-borda);
+  border-radius: 12px;
+  background: var(--painel-fundo, #eef3f4);
+}
+
+/* Modal genérico (encaixe da recepção) — reaproveita o fundo escurecido do modal de
+   seleção de guichê, com um cartão de conteúdo livre em vez do grid de quadrados. */
+.modal-cartao {
+  background: var(--cor-superficie);
+  border-radius: 12px;
+  padding: var(--espaco-5);
+  max-width: 420px;
+  width: 100%;
+}
+
+.modal-cartao-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.modal-cartao-topo h2 {
+  margin: 0;
+}
+
+/* Modal obrigatório de seleção de guichê (20/09): fundo escurecido por cima da tela do
+   atendente, quadrados clicáveis (um por guichê/sala) — clicar já escolhe e confirma. */
+.modal-fundo {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 46, 56, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--espaco-5);
+}
+
+.modal-selecao-guiche {
+  background: var(--cor-superficie);
+  border-radius: 14px;
+  padding: var(--espaco-6);
+  max-width: 560px;
+  width: 100%;
+  text-align: center;
+}
+
+.grade-quadros-guiche {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 14px;
+  margin-top: var(--espaco-5);
+}
+
+.quadro-guiche {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  padding: var(--espaco-3);
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: 12px;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  border: 2px solid var(--cor-borda);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.quadro-guiche:not(:disabled):hover {
+  border-color: var(--cor-primaria);
+  background: var(--cor-hover);
+}
+
+/* Guichê ocupado por outro atendente agora (22/09, heartbeat em tempo real) — o quadrado já
+   vem `disabled` (opacidade reduzida pelo estilo global de button:disabled), esse rótulo só
+   deixa explícito quem está lá, sem depender só do `title` (que exige hover pra aparecer). */
+.quadro-guiche-ocupado {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--cor-erro);
+}
+
+.lista-atendidos-hoje {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.lista-atendidos-hoje li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: var(--espaco-2) 0;
+  border-bottom: 1px solid var(--cor-borda);
+  font-size: 0.9rem;
+}
+
+.contagem-ausencia {
+  font-family: var(--fonte-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--cor-texto);
+  white-space: nowrap;
+}
+
+.contagem-ausencia.alerta { color: var(--cor-erro); }
+.contagem-ausencia.expirada { color: var(--cor-erro); font-size: 0.85rem; font-weight: 600; }
+
+/* Cartões de estatística do dashboard do gestor (21/09) — antes números soltos com cor
+   inline hardcoded; agora usa os tokens semânticos, consistente com chips/notificações. */
+.estatisticas {
+  display: flex;
+  gap: var(--espaco-6);
+  flex-wrap: wrap;
+}
+
+.estatistica {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.estatistica-valor {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--cor-texto);
+}
+
+.estatistica-valor.sucesso { color: var(--cor-sucesso); }
+.estatistica-valor.erro { color: var(--cor-erro); }
+
+.estatistica-rotulo {
+  font-size: 0.82rem;
+  color: var(--cor-texto-suave);
+}
+
+/* Casca do gestor — sidebar lateral clássica (22/09, ver skill identidade-visual e o
+   desenho anexado). Diferente do cabeçalho das outras telas (topo, 100vw): aqui a marca
+   fica na lateral, ocupando a altura inteira da viewport.
+
+   Altura travada em 100vh no container (22/09, segunda rodada — achado ao vivo): sem isso,
+   uma tela de conteúdo comprida (ex. lista de usuários grande) fazia a PÁGINA INTEIRA rolar,
+   e a sidebar "crescia" junto em vez de ficar fixa. Agora só `.gestor-conteudo` rola
+   internamente; a sidebar tem sua própria rolagem independente (`overflow-y: auto`) caso a
+   navegação um dia não caiba (ex. muitos itens em tela baixa), mas na prática fica parada. */
+.gestor-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.gestor-sidebar {
+  width: 264px;
+  flex-shrink: 0;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--espaco-5) var(--espaco-4);
+  background: linear-gradient(180deg, var(--cor-marca-clara), var(--cor-marca));
+  color: var(--cor-marca-texto);
+}
+
+.gestor-marca {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--espaco-6);
+  padding: 0 var(--espaco-2);
+}
+
+.gestor-marca-produto {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+
+.gestor-marca-prefeitura {
+  font-size: 0.76rem;
+  color: var(--cor-marca-texto-suave);
+  margin-top: 2px;
+}
+
+.gestor-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.gestor-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: var(--cor-marca-texto-suave);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.gestor-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cor-marca-texto);
+}
+
+.gestor-nav-ativo {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+
+/* "Importar" fica visualmente separado dos outros 3 itens (respiro maior) — replica o
+   espaçamento do desenho anexado, onde o item aparece mais abaixo, meio isolado. */
+.gestor-nav-separado {
+  margin-top: var(--espaco-6);
+}
+
+.gestor-sidebar-rodape {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: var(--espaco-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.gestor-sidebar-usuario {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--espaco-2);
+  line-height: 1.35;
+}
+
+.gestor-sidebar-usuario span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-marca-texto-suave);
+}
+
+.gestor-sidebar-rodape button {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--cor-marca-texto);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.gestor-sidebar-rodape button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.gestor-conteudo {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--espaco-5) var(--espaco-6);
+  background: var(--cor-fundo);
+}
+
+@media (max-width: 860px) {
+  .gestor-shell {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+  .gestor-sidebar {
+    width: 100%;
+    height: auto;
+  }
+  .gestor-conteudo {
+    height: auto;
+    overflow-y: visible;
+  }
+  .gestor-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .gestor-nav-separado {
+    margin-top: 2px;
+  }
+}
+
+/* Conteúdo das telas do gestor/admin (22/09) — dentro de `.gestor-conteudo`, sem o wrapper
+   `.pagina` (que é pra telas com cabeçalho de topo full-width; aqui a marca já é a sidebar).
+   Bug real corrigido (23/09): sem `margin: 0 auto`, o conteúdo ficava sempre colado na
+   esquerda em qualquer tela mais larga que 1180px (a maioria dos monitores de desktop) — o
+   `max-width` limitava a largura, mas nada centralizava o bloco resultante dentro do espaço
+   sobrando à direita. */
+.pagina-gestor {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* Bug real corrigido (22/09): `.cartao` tem `max-width: 480px` por padrão (pensado pra
+   formulário de login) — só é liberado dentro de `.pagina` (`.pagina .cartao`), e as telas
+   do gestor usam `.pagina-gestor`, não `.pagina`. Sem isso, os blocos de configuração da
+   grade apareciam pequenos e encostados na esquerda em vez de ocupar a largura disponível. */
+.pagina-gestor .cartao {
+  max-width: none;
+}
+
+.botao-voltar {
+  background: none;
+  color: var(--cor-texto-suave);
+  border: none;
+  padding: 4px 0;
+  margin-bottom: var(--espaco-2);
+  font-weight: 500;
+}
+
+.botao-voltar:not(:disabled):hover {
+  color: var(--cor-primaria);
+  background: none;
+}
+
+.form-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+}
+
+/* Seletor de múltiplas grades (23/09) — checkboxes num container rolável, pra não estourar
+   o modal quando a secretaria tem muitas grades cadastradas. */
+.lista-selecao-grades {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--cor-borda);
+  border-radius: 8px;
+  padding: var(--espaco-2) var(--espaco-3);
+}
+
+.linha-selecao-grade {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--cor-texto) !important;
+}
+
+.linha-selecao-grade input {
+  width: auto;
+}
+
+/* Etiqueta de grade alocada (23/09) — mostrada na tabela "Usuários internos" ao lado do
+   nome do atendente/recepcionista, uma por grade. Mesmo espírito visual do `.chip`, cor
+   neutra (não é um status, é só uma marcação informativa). */
+.etiquetas-grade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.etiqueta-grade {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cor-info-fundo);
+  color: var(--cor-primaria);
+  white-space: nowrap;
+}
+
+.form-vertical label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--cor-texto-suave);
+}
+
+/* Zona de arrastar-e-soltar da importação (22/09, replicando GESTOR-IMPORTAR.png). */
+.zona-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espaco-3);
+  min-height: 260px;
+  border: 2px dashed var(--cor-borda);
+  border-radius: 14px;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-suave);
+  text-align: center;
+  padding: var(--espaco-6);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.zona-upload:hover, .zona-upload-ativa {
+  border-color: var(--cor-primaria);
+  background: var(--cor-info-fundo);
+  color: var(--cor-primaria);
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--espaco-4);
+  margin-bottom: var(--espaco-4);
+}
+
+.dash-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: none;
+}
+
+.dash-linha-2 {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--espaco-4);
+  align-items: stretch;
+  margin-bottom: var(--espaco-4);
+}
+
+.dash-progresso, .dash-grafico, .dash-full {
+  max-width: none;
+}
+
+@media (max-width: 900px) {
+  .dash-stats {
+    grid-template-columns: 1fr;
+  }
+  .dash-linha-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Gráfico de linha em SVG puro (22/09) — ver componentes/GraficoLinha.tsx. Container
+   relativo pra posicionar o tooltip de hover por cima do SVG, calculado em % das
+   coordenadas do viewBox (o SVG escala width:100%, então % mapeia 1:1 pra pixel real). */
+.grafico-linha {
+  position: relative;
+}
+
+.grafico-linha svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.grafico-grade {
+  stroke: var(--cor-borda);
+  stroke-width: 1;
+}
+
+.grafico-linha-serie {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.grafico-linha-sucesso { stroke: var(--cor-sucesso); }
+.grafico-linha-erro { stroke: var(--cor-erro); }
+.grafico-ponto { stroke: var(--cor-superficie); stroke-width: 1.5; transition: r 0.1s ease; }
+circle.grafico-linha-sucesso { fill: var(--cor-sucesso); }
+circle.grafico-linha-erro { fill: var(--cor-erro); }
+.grafico-ponto-ativo { r: 5.5; stroke-width: 2; }
+
+/* Tooltip de hover (22/09) — flutua sobre o ponto, posicionado em % das coordenadas do
+   viewBox; translate centraliza horizontalmente e sobe acima do ponto. */
+.grafico-tooltip {
+  position: absolute;
+  transform: translate(-50%, -130%);
+  background: var(--cor-marca);
+  color: var(--cor-marca-texto);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(14, 46, 56, 0.25);
+  z-index: 5;
+}
+
+.grafico-tooltip span {
+  font-family: var(--fonte-mono);
+}
+
+.grafico-eixo-texto {
+  font-size: 9px;
+  fill: var(--cor-texto-suave);
+  font-family: var(--fonte-mono);
+}
+
+.grafico-legenda {
+  display: flex;
+  gap: var(--espaco-4);
+  margin-top: var(--espaco-2);
+  font-size: 0.82rem;
+  color: var(--cor-texto-suave);
+}
+
+.grafico-legenda-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.grafico-legenda-cor {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.grafico-linha-sucesso-fundo { background: var(--cor-sucesso); }
+.grafico-linha-erro-fundo { background: var(--cor-erro); }
+
+/* Lista de progressão (22/09) — "Atendido por atendente" / "Atendimentos por grade". */
+.lista-progresso {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+}
+
+.lista-progresso-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  margin-bottom: 4px;
+}
+
+.lista-progresso-trilha {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  overflow: hidden;
+}
+
+.lista-progresso-barra {
+  height: 100%;
+  background: var(--cor-primaria);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* Barra de proporção atendido/ausente por grade (22/09) — sempre preenche 100% da linha,
+   dividida em duas cores; a métrica é a taxa de conclusão da grade, não volume comparado. */
+.barra-proporcao {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--cor-fundo);
+}
+
+.barra-proporcao-atendido {
+  height: 100%;
+  background: var(--cor-sucesso);
+  transition: width 0.3s ease;
+}
+
+.barra-proporcao-ausente {
+  height: 100%;
+  background: var(--cor-erro);
+  transition: width 0.3s ease;
+}
+
+.lista-guiches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: var(--espaco-3);
+}
+
+.linha-guiche {
+  border: 1px solid var(--cor-borda);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.linha-guiche-resumo {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--cor-superficie);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.linha-guiche-resumo:not(:disabled):hover {
+  background: var(--cor-hover);
+}
+
+.linha-guiche-resumo .engrenagem {
+  opacity: 0.55;
+}
+
+.linha-guiche-andar {
+  font-size: 0.85rem;
+  color: var(--cor-texto-suave);
+}
+
+.linha-guiche-status {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--cor-texto-suave);
+}
+
+.linha-guiche-edicao {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--espaco-3);
+  align-items: flex-end;
+  padding: var(--espaco-4);
+  background: var(--cor-fundo);
+  border-top: 1px solid var(--cor-borda);
+}
+
+.linha-guiche-edicao label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--cor-texto-suave);
+}
+
+/* Painel de TV — ícone de status na tabela, cores ajustadas pro tema branco (20/09).
+   Trocado de caractere Unicode solto pra ícone de verdade (lucide-react, 22/09, "organize
+   os ícones") — mesma biblioteca usada no resto do sistema. */
+.status-icone {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.status-icone svg {
+  width: 15px;
+  height: 15px;
+}
+
+.status-icone.atendido { background: var(--cor-sucesso-fundo); color: var(--cor-sucesso); }
+.status-icone.chamado { background: var(--cor-aviso-fundo); color: var(--cor-aviso); }
+.status-icone.ausente { background: var(--cor-erro-fundo); color: var(--cor-erro); }
+/* Ícone cinza novo (23/09): "chamado", mas ainda dentro do prazo normal (não órfão) — ver
+   ChamadaPainel.ehOrfao. Usa os tokens --painel-* (não --cor-*) porque esse ícone só existe
+   na tabela do painel de TV, que roda no seu próprio namespace de tema isolado. */
+.status-icone.aguardando { background: var(--painel-borda); color: var(--painel-texto-suave); }

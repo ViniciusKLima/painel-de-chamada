@@ -1,0 +1,9 @@
+drop table if exists mapeamento_externo;
+drop table if exists chamadas;
+drop table if exists agendamentos;
+drop table if exists lotes_importacao;
+drop table if exists guiches;
+drop table if exists usuarios;
+drop table if exists unidades;
+drop table if exists secretarias;
+drop table if exists prefeituras;

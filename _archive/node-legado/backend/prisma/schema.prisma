@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Papel {
+  admin
+  gestor
+  atendente
+}
+
+enum StatusAgendamento {
+  aguardando
+  chamado
+  atendido
+  ausente
+  cancelado
+}
+
+enum StatusLote {
+  processando
+  concluido
+  erro
+}
+
+enum TipoMapeamento {
+  department
+  unit
+}
+
+model Prefeitura {
+  id         String       @id @default(uuid())
+  nome       String
+  slug       String       @unique
+  issuerJwt  String?      @unique @map("issuer_jwt")
+  criadoEm   DateTime     @default(now()) @map("criado_em")
+  secretarias Secretaria[]
+
+  @@map("prefeituras")
+}
+
+model Secretaria {
+  id            String   @id @default(uuid())
+  prefeituraId  String   @map("prefeitura_id")
+  prefeitura    Prefeitura @relation(fields: [prefeituraId], references: [id])
+  nome          String
+  sigla         String
+  criadoEm      DateTime @default(now()) @map("criado_em")
+
+  usuarios          Usuario[]
+  locais            Local[]
+  guiches           Guiche[]
+  lotesImportacao   LoteImportacao[]
+  agendamentos      Agendamento[]
+  mapeamentosExterno MapeamentoExterno[]
+
+  @@unique([prefeituraId, sigla])
+  @@map("secretarias")
+}
+
+// Unidade física dentro de uma secretaria (ex: "CRAS - Vila Rica", "CRAS - Cavaleiro").
+// Uma secretaria pode operar em vários endereços; cada guichê existe fisicamente em um Local.
+model Local {
+  id           String   @id @default(uuid())
+  secretariaId String   @map("secretaria_id")
+  secretaria   Secretaria @relation(fields: [secretariaId], references: [id])
+  nome         String
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  guiches      Guiche[]
+  agendamentos Agendamento[]
+
+  @@unique([secretariaId, nome])
+  @@map("locais")
+}
+
+model Usuario {
+  id             String   @id @default(uuid())
+  secretariaId   String   @map("secretaria_id")
+  secretaria     Secretaria @relation(fields: [secretariaId], references: [id])
+  nome           String
+  email          String
+  papel          Papel
+  externalSub    String?  @unique @map("external_sub") // "sub" do JWT
+  criadoViaSso   Boolean  @default(false) @map("criado_via_sso")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  lotesImportacao LoteImportacao[]
+  chamadas         Chamada[]
+
+  @@unique([secretariaId, email])
+  @@map("usuarios")
+}
+
+model Guiche {
+  id           String   @id @default(uuid())
+  secretariaId String   @map("secretaria_id")
+  secretaria   Secretaria @relation(fields: [secretariaId], references: [id])
+  localId      String   @map("local_id")
+  local        Local    @relation(fields: [localId], references: [id])
+  nome         String
+  ativo        Boolean  @default(true)
+
+  agendamentos Agendamento[]
+  chamadas     Chamada[]
+  mapeamentos  MapeamentoExterno[]
+
+  @@unique([secretariaId, nome])
+  @@map("guiches")
+}
+
+model LoteImportacao {
+  id           String     @id @default(uuid())
+  secretariaId String     @map("secretaria_id")
+  secretaria   Secretaria @relation(fields: [secretariaId], references: [id])
+  usuarioId    String     @map("usuario_id")
+  usuario      Usuario    @relation(fields: [usuarioId], references: [id])
+  arquivoNome  String     @map("arquivo_nome")
+  dataUpload   DateTime   @default(now()) @map("data_upload")
+  status       StatusLote @default(processando)
+  totalLinhas  Int?       @map("total_linhas")
+  totalErros   Int?       @map("total_erros")
+
+  agendamentos Agendamento[]
+
+  @@map("lotes_importacao")
+}
+
+model Agendamento {
+  id             String            @id @default(uuid())
+  secretariaId   String            @map("secretaria_id")
+  secretaria     Secretaria        @relation(fields: [secretariaId], references: [id])
+  loteId         String            @map("lote_id")
+  lote           LoteImportacao    @relation(fields: [loteId], references: [id])
+  protocolo      String
+  nomeCidadao    String            @map("nome_cidadao")
+  // CPF e telefone: dado sensível (LGPD). Só a API expõe pra papel gestor/admin —
+  // ver `mascararCamposSensiveis` em `backend/src/routes/fila.ts`. Nunca aparecem
+  // no painel de TV público (`backend/src/routes/painel.ts`).
+  cpf            String?
+  telefone       String?
+  servico        String?           // "Serviço" da planilha de origem (ex: CadÚnico) — não é o Local
+  horarioPrevisto DateTime         @map("horario_previsto")
+  localId        String?           @map("local_id") // unidade física (ex: CRAS Vila Rica) — coluna ainda não existe no export real, opcional até existir
+  local          Local?            @relation(fields: [localId], references: [id])
+  guicheId       String?           @map("guiche_id")
+  guiche         Guiche?           @relation(fields: [guicheId], references: [id])
+  status         StatusAgendamento @default(aguardando)
+  // Preenchidos quando o cidadão cancela o agendamento antes de chegar (status 'cancelado') —
+  // diferente de 'ausente', que é quando ele foi chamado e não apareceu.
+  canceladoEm       DateTime?      @map("cancelado_em")
+  motivoCancelamento String?       @map("motivo_cancelamento")
+  criadoEm       DateTime          @default(now()) @map("criado_em")
+
+  chamadas Chamada[]
+
+  @@unique([secretariaId, protocolo])
+  @@index([secretariaId, status])
+  @@map("agendamentos")
+}
+
+model Chamada {
+  id             String      @id @default(uuid())
+  agendamentoId  String      @map("agendamento_id")
+  agendamento    Agendamento @relation(fields: [agendamentoId], references: [id])
+  guicheId       String      @map("guiche_id")
+  guiche         Guiche      @relation(fields: [guicheId], references: [id])
+  usuarioId      String      @map("usuario_id")
+  usuario        Usuario     @relation(fields: [usuarioId], references: [id])
+  chamadoEm      DateTime    @default(now()) @map("chamado_em")
+
+  @@index([chamadoEm])
+  @@map("chamadas")
+}
+
+// Traduz department_ids / unit_ids do JWT da plataforma para secretaria/guiche locais
+model MapeamentoExterno {
+  id           String         @id @default(uuid())
+  tipo         TipoMapeamento
+  externalId   String         @map("external_id")
+  secretariaId String?        @map("secretaria_id")
+  secretaria   Secretaria?    @relation(fields: [secretariaId], references: [id])
+  guicheId     String?        @map("guiche_id")
+  guiche       Guiche?        @relation(fields: [guicheId], references: [id])
+
+  @@unique([tipo, externalId])
+  @@map("mapeamento_externo")
+}
