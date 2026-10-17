@@ -137,3 +137,33 @@ domínio, com CPF próprio quando cadastrado.
 - **Confirmar o host real de Jaboatão** (esse exemplo é de Ipojuca) antes de codar contra essa API de verdade.
 - **Issue já aberta no GitLab da plataforma (17/09)** pedindo um endpoint interno/admin de listagem em massa dos agendamentos — resposta inicial do Mateus: "não temos atualmente", vai analisar viabilidade. Acompanhar retorno antes de descartar de vez o upload manual.
 - Conseguir um token de API de teste pra validar os endpoints de verdade (nada aqui foi testado contra a API real, só documentado a partir do OpenAPI spec).
+
+## Reconfirmado em 16/10 — limitação continua de pé, numa instância diferente
+
+O dono do produto trouxe acesso a outra instância real da mesma plataforma — **Porto Velho-RO**
+(`pvhmais.portovelho.ro.gov.br/admin/api-reference`, login de admin próprio, navegado ao vivo
+via Chrome) — perguntando se o módulo de agendamento (ou algum outro) já resolve o pull em
+massa. Resultado: **não resolve, a limitação de 17/09 continua valendo igual**, confirmado
+direto na doc ao vivo (não só no OpenAPI salvo de Ipojuca):
+
+- `GET /scheduling_appointments` ("Lista agendamentos do cidadão") — query params são só
+  `citizen_cpf` (**obrigatório**), `status` (enum) e `per_page`. **Nenhum filtro por data,
+  unidade/local ou "todos"** — mesma forma exata documentada em 17/09, nessa instância
+  diferente, um mês depois.
+- `GET /scheduling_locations` ("Locais de Agendamento") — é sobre **disponibilidade futura**
+  pra marcar um agendamento NOVO (datas/horários livres), não uma listagem de agendamentos
+  JÁ marcados. Não serve pro nosso caso de uso (puxar quem já tem hora marcada pra um dia).
+- **Verificado um caminho alternativo que não tinha sido checado antes: webhooks**. A
+  plataforma tem uma seção "Tramitação por Sistemas Externos" com webhooks outbound de
+  verdade (`POST /ai_agents/receive_response`, `POST /external_responsibles/receive_response`
+  — documentados também num doc público separado, `/docs/integracoes`) — mas são **só pra
+  submissão de FORMULÁRIO** ("quando uma submissão de formulário chega ou muda de status"),
+  não têm nenhum evento de agendamento criado/alterado. **Não existe webhook de agendamento**
+  nessa plataforma hoje — outra via que poderia ter substituído o polling/import manual, e
+  também não existe.
+
+**Conclusão pro painel de chamada**: nenhum módulo da API externa (agendamento, locais,
+webhooks, notificações) resolve "puxar os agendamentos de um dia/unidade automaticamente".
+O upload manual de planilha continua sendo o único caminho viável pro MVP — não é mais uma
+lacuna temporária até a plataforma responder, é um limite estrutural confirmado em duas
+instâncias reais, com um mês de intervalo.

@@ -141,6 +141,7 @@ func main() {
 			protegido.Get("/prefeituras/{prefeituraId}/dashboard", c.GetDashboardPrefeitura)
 			protegido.Get("/prefeituras/{prefeituraId}/usuarios", c.GetUsuariosPrefeitura)
 			protegido.Get("/prefeituras/{prefeituraId}/paineis", c.GetPaineisPrefeitura)
+			protegido.Post("/prefeituras/{prefeituraId}/demo/gerar", c.PostGerarDadosDemo)
 			protegido.Post("/secretarias/{secretariaId}/gestores", c.PostGestor)
 			protegido.Post("/unidades/{unidadeId}/funcionarios", c.PostFuncionario)
 		})
@@ -228,6 +229,25 @@ func cors(appEnv, origensPermitidasCSV string) func(http.Handler) http.Handler {
 			}
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			// Guarda de CSRF (16/10, achado pela revisão automática de segurança depois do
+			// cookie de sessão passar a aceitar SameSite=None em requisições HTTPS — ver
+			// RequisicaoViaHTTPS em internal/auth/context.go): SameSite=None reabilita o
+			// cookie em requisição cross-site de verdade, o que é exatamente o que um ataque
+			// de CSRF precisa. CORS sozinho não bloqueia a requisição em si — só impede o
+			// JS de outro site de LER a resposta — e dois endpoints (`importarPlanilha`,
+			// preview) mandam `multipart/form-data`, que nem dispara preflight. Por isso,
+			// pra qualquer método que muda estado (tudo que não é GET/HEAD/OPTIONS), se vier
+			// um `Origin` que não está na lista permitida, a requisição é recusada aqui,
+			// antes de chegar no handler — navegador sempre manda `Origin` em POST/PUT/
+			// PATCH/DELETE entre sites, então isso fecha a lacuna independente de
+			// preflight. Requisição sem `Origin` nenhum (cliente que não é navegador, ex.:
+			// os testes automatizados via pgx direto, ou curl) passa sem checagem — igual
+			// já era antes.
+			metodoMudaEstado := r.Method != http.MethodGet && r.Method != http.MethodHead
+			if metodoMudaEstado && origem != "" && !origemPermitida(origem) {
+				http.Error(w, `{"error_code":"origem_nao_permitida","message":"origem nao permitida"}`, http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)

@@ -12,38 +12,134 @@ novo. Fonte de verdade dos tokens é `frontend/src/index.css` (bloco `:root` no 
 skill explica as escolhas, não duplica os valores exatos (que podem ser ajustados ali sem
 reescrever este documento, desde que a lógica abaixo continue valendo).
 
-## Princípio geral: fugir de "cara de IA"
+## Reestruturação pro design system do Conecta Cidades (16/10)
 
-Pedido explícito: "moderno mas que fuja de aparências de IA". Isso significa evitar
-especificamente:
+**A identidade visual inteira foi migrada pra seguir o design system real do Conecta
+Cidades** (a empresa por trás da plataforma "Jaboatão mais fácil"/"Jornada", dona do produto
+pro qual este painel é construído) — pedido direto do dono do produto depois de uma análise
+de um artifact deles (design system do site do cidadão + painel administrativo, em Tailwind/
+Bootstrap). **Isso substitui a seção "Princípio geral: fugir de cara de IA" logo abaixo como
+critério ativo** — aquela seção documenta a identidade ORIGINAL (21/09), mantida como
+histórico porque explica decisões que ainda aparecem em código/commits antigos, mas a fonte,
+a cor primária e o raio de borda que ela descrevia não são mais os valores em uso.
 
-- **Inter ou Space Grotesk** como fonte "seguro" — usamos **Public Sans** (a mesma fonte do
-  design system do governo americano, USWDS — combina tematicamente com "sistema de uma
-  prefeitura" sem ser óbvio) + **IBM Plex Mono** pra números.
+**O que mudou, de ponta a ponta**:
+- **Fonte**: `Public Sans` + `IBM Plex Mono` → **`Montserrat` sozinha**, inclusive em número
+  (Montserrat tem `tabular-nums`, não precisava de uma mono separada) — o design system do
+  Conecta usa uma família só, nas duas frentes deles.
+- **Cor de ação** (`--cor-primaria`): teal-azulado (`#146c8c`) → **`#d52e5f`**, o valor exato
+  usado nos mockups deles ("cada prefeitura tem a sua cor" — mas esse é o canônico).
+  Continua sobrescrito em runtime por prefeitura (`tema.ts`), sem mudança nesse mecanismo.
+- **Cores semânticas** (sucesso/erro/aviso): a HUE vem do valor exato deles (`#32c787`/
+  `#ff6b68`/`#ffc721`), mas os 3 originais falham contraste WCAG AA (< 3:1) usados como texto
+  pequeno sobre fundo claro — são claros/vivos demais pra esse uso. Ver "Paleta de cores"
+  abaixo pro valor final (mesma família, escurecido até passar ~4.5:1+) e o raciocínio.
+- **Raio de borda**: de um valor só (12px cartão) pra uma família de 3 (`--raio-pequeno` 7px,
+  `--raio-cartao` 10px, `--raio-modal` 16px) — os números exatos que o painel administrativo
+  deles documenta. Pílula (999px) continua permitida em chip/filtro — a proibição deles é só
+  pra botão de FORMULÁRIO totalmente arredondado, não pra chip.
+- **Gradiente removido**: `.cabecalho` e `.gestor-sidebar` usavam
+  `linear-gradient(..., --cor-marca-clara, --cor-marca)` — viraram fundo CHAPADO
+  (`--cor-marca` sozinho) — proibição explícita deles ("o produto usa cor chapada"). O token
+  `--cor-marca-clara` e a função `clarear()` em `tema.ts` que o calculava foram removidos por
+  completo (ficaram órfãos depois da mudança).
+- `lang="en"` → `lang="pt-BR"` em `index.html` (proibição deles: "Inglês na interface" —
+  isso nunca tinha sido corrigido, achado nessa auditoria).
+
+**O que foi mantido/ficou de fora de propósito, porque o design system deles não cobre**:
+- Escala de espaçamento (`--espaco-1..6`) — eles não definem uma, a nossa continua.
+- Sombra — eles só proíbem "sombra pesada"; as nossas já eram leves (opacidade 0.04-0.09 na
+  maioria), não precisaram de ajuste.
+- `--cor-borda`/`--cor-fundo`/`--cor-superficie` (neutros) — "não há cor de fundo, borda ou
+  superfície listada" no material deles; mantidos como estavam.
+- O mecanismo de tema por prefeitura em runtime (`tema.ts`, `aplicarTemaPrefeitura`) — a
+  prefeitura de Jaboatão já tem sua PRÓPRIA cor configurada pelo admin (um azul,
+  `#0037c1`/`#cddcfe`, escolhida antes desta migração) — **não foi alterada**, é dado real
+  configurado pela UI, não um default de código. O token `#d52e5f` só aparece de fato em
+  telas sem prefeitura (Login, Admin) ou numa prefeitura nova que ainda não escolheu cor —
+  isso é o comportamento correto do sistema, não uma migração incompleta.
+- `default` de `prefeituras.cor_destaque`/`cor_clara` no schema (migration `000009`) foi
+  realinhado pro novo valor — só afeta prefeitura CRIADA sem cor explícita daqui pra frente,
+  não retroage em nenhuma linha existente.
+
+Ver `frontend/src/index.css` (comentário no topo do `:root`) e `tema.ts` pros detalhes de
+implementação; o resto desta skill (abaixo) foi atualizado pontualmente onde citava um valor
+que mudou, mas a lógica/estrutura de cada seção (cabeçalho em 2 barras, tabela com
+`.tabela-cartao`, hover suave, etc.) continua toda válida — nada disso veio do Conecta, é
+convenção nossa e não foi tocado.
+
+## Princípio geral (histórico, 21/09 — ver seção acima pro critério ATUAL)
+
+Pedido explícito na época: "moderno mas que fuja de aparências de IA". Isso significava
+evitar especificamente:
+
+- **Inter ou Space Grotesk** como fonte "seguro" — usava-se **Public Sans** (a mesma fonte do
+  design system do governo americano, USWDS) + **IBM Plex Mono** pra números. **Superado em
+  16/10** — agora é `Montserrat` sozinha, pelo design system do Conecta Cidades (ver seção
+  acima). A lição de fundo (não usar a fonte "óbvia" sem pensar) continua válida, só o valor
+  concreto mudou.
 - **Azul genérico de SaaS** (`#1d4ed8`/`#2563eb` tipo Tailwind/Bootstrap) como cor primária —
-  usamos um teal-azulado mais institucional (`--cor-primaria`), com um teal-marinho mais
-  escuro reservado só pro cabeçalho (`--cor-marca`).
+  usava-se um teal-azulado institucional. **Superado em 16/10** — agora é `#d52e5f` (rosa/
+  magenta), valor canônico do Conecta Cidades, não mais um teal.
 - **Cinza puro** em bordas/texto secundário — todos os neutros aqui têm uma leve inclinação
   pra o mesmo matiz do teal (ex. `--cor-borda: #dce3e0`, não `#e5e7eb`), pra parecer
-  escolhido, não herdado do browser.
+  escolhido, não herdado do browser. **Ainda válido** — o Conecta Cidades não define cor de
+  borda/superfície, então esse raciocínio nosso continua de pé.
 - Gradiente roxo-azul, fundo creme+serif+terracota, `rounded-lg` em tudo, tudo centralizado —
-  nenhum desses padrões aparece aqui.
+  nenhum desses padrões aparece aqui. **Ainda válido** (e o gradiente do cabeçalho, que não
+  era roxo-azul mas ainda assim era gradiente, foi removido em 16/10 por um motivo
+  relacionado mas distinto: proibição explícita do Conecta Cidades, não da lista acima).
 
-Se uma tela nova (ex. o admin master que o dono do produto mencionou que vem por aí) precisar
-de uma cor/fonte que não existe ainda, ela deve nascer como uma extensão desta paleta (mesmo
-matiz, mesmo par de fontes), não uma escolha solta.
+Se uma tela nova (ex. o admin master) precisar de uma cor/fonte que não existe ainda, ela
+deve nascer como extensão da paleta ATUAL (Montserrat + a família de cor do Conecta Cidades
+descrita acima), não uma escolha solta nem um retorno à paleta de 21/09.
 
 ## Tipografia
 
-- **Base**: `Public Sans` (pesos 400/500/600/700/800), carregada via Google Fonts em
-  `index.html`. Fallback `system-ui`.
-- **Números**: `IBM Plex Mono` (pesos 500/600) — usada via a classe utilitária `.numerico`
-  (`font-family` + `font-variant-numeric: tabular-nums`). Aplicar em qualquer célula/valor
+- **Base**: `Montserrat` (pesos 400/500/600/700/800), carregada via Google Fonts em
+  `index.html`. Fallback `system-ui`. **Mudou em 16/10** (era `Public Sans`) — valor exato do
+  design system do Conecta Cidades, usado nas duas frentes deles (site do cidadão e painel
+  administrativo), ver "Reestruturação" acima.
+- **Números**: não tem mais uma fonte separada (era `IBM Plex Mono` até 16/10) — Montserrat
+  já suporta algarismo tabular. A classe `.numerico` continua existindo, só com
+  `font-variant-numeric: tabular-nums` (sem `font-family`). Aplicar em qualquer célula/valor
   que seja essencialmente um número ou código: protocolo, horário, contagem regressiva,
   cooldown, estatística grande do dashboard. **Não** aplicar em nome de pessoa, guichê
   ("Guichê 1" é rótulo, não número solto) ou texto livre.
 - Títulos (`h1`/`h2`/`h3`) usam `font-weight: 700` e `letter-spacing: -0.01em` por padrão
   (ver bloco global em `index.css`) — não redefinir peso/espaçamento por tela.
+
+### Escala de tamanho de fonte (16/10)
+
+Pedido direto do dono do produto depois de ver o sistema na cara nova: "achando muito
+grande as fontes" — queria variável por tipo de texto pra testar tamanhos sem caçar valor
+espalhado pelo CSS. Causa raiz real: `<td>` e `<h1>`/`<h2>` soltos (fora de `.cartao`) nunca
+tinham tido um `font-size` explícito — caíam no padrão do navegador (~16px pra célula de
+tabela, ~32px/24px pros títulos), bem maior que o resto da interface, que sempre usou
+valores pequenos (0.72-0.95rem). Isso sempre existiu, mas ficou mais evidente com Montserrat
+(letra mais "cheia"/pesada que a Public Sans anterior no mesmo valor em rem).
+
+Tokens em `:root` (`index.css`), logo depois da escala de espaçamento:
+
+| Token | Valor | Onde |
+|---|---|---|
+| `--fonte-tamanho-titulo-pagina` | 1.5rem | `h1` solto — "Dashboard", "Usuários internos" |
+| `--fonte-tamanho-titulo-secao` | 1.05rem | `h2` — título de bloco/seção, geralmente em cima de uma tabela ("Pendentes", "Sala de espera") |
+| `--fonte-tamanho-titulo-cartao` | 0.95rem | `h3` dentro de `.cartao` — bloco de configuração |
+| `--fonte-tamanho-corpo` | 0.95rem | texto padrão de botão/input |
+| `--fonte-tamanho-tabela` | 0.85rem | conteúdo de `<td>` |
+| `--fonte-tamanho-tabela-cabecalho` | 0.72rem | `<th>` (cabeçalho de coluna, caixa alta) |
+
+**Pra testar um tamanho novo, mexer só nesses 6 valores** — nunca num seletor específico
+(`.cartao h2`, por exemplo, foi removido de propósito porque só duplicava
+`--fonte-tamanho-titulo-secao`). Qualquer elemento novo que precise de um tamanho de texto
+que já existe numa dessas 6 categorias deve usar o token, não um `rem` solto; só criar um
+token sétimo se o novo caso for genuinamente um tipo de texto diferente dos 6 (ex. não força
+"tudo cabe em título/corpo/tabela" se não couber de verdade).
+
+**Fora dessa escala, de propósito**: o painel de TV (`telas/painel-tv`) usa `clamp()`
+responsivo ao viewport, não esses tokens — é uma tela pra ler de longe numa TV física, o
+tamanho precisa escalar com o tamanho da tela, não ser um valor fixo em rem.
 
 ## Paleta de cores
 
@@ -51,25 +147,101 @@ Todas as cores vivem como variável CSS em `:root` (`frontend/src/index.css`). N
 hex solto num componente — se a cor que você precisa não existe como token, é sinal de que
 falta um token, não que vale a pena um valor local.
 
+**Atualizada em 16/10** pra seguir o design system do Conecta Cidades (ver "Reestruturação"
+acima) — a cor de ação e as 3 semânticas de status mudaram de família (de teal/verde-floresta/
+vermelho-tijolo/âmbar pra magenta/verde/coral/amarelo-terroso); os neutros (fundo/superfície/
+borda) não mudaram, porque o Conecta Cidades não define esses tokens.
+
 | Token | Uso | Por quê |
 |---|---|---|
-| `--cor-fundo` | fundo da página | Off-white quente, não cinza-azulado puro — evita o "branco hospitalar" do protótipo original |
-| `--cor-superficie` | fundo de cartão/modal | Branco puro — contraste limpo contra o fundo quente |
-| `--cor-texto` / `--cor-texto-suave` | texto principal/secundário | Quase-preto com leve matiz teal, não `#000`/`#1a1a1a` genérico |
-| `--cor-borda` | bordas, divisórias | Cinza com leve matiz teal, nunca cinza puro |
-| `--cor-marca` / `--cor-marca-clara` | **só** o fundo do cabeçalho e da sidebar do gestor | Default teal-marinho escuro, mas **segue a cor de destaque de cada prefeitura em runtime desde 23/09** (ver seção seguinte) — não usar em botão de conteúdo |
+| `--cor-fundo` | fundo da página | Off-white quente — não definido pelo Conecta Cidades, mantido do original |
+| `--cor-superficie` | fundo de cartão/modal | Branco puro |
+| `--cor-texto` / `--cor-texto-suave` | texto principal/secundário | `#444444` — valor exato do Conecta Cidades (`--cor-texto-suave` é derivado, eles não definem um secundário) |
+| `--cor-borda` | bordas, divisórias | Cinza com leve matiz — não definido pelo Conecta Cidades, mantido do original |
+| `--cor-marca` | **só** o fundo do cabeçalho e da sidebar do gestor | Default `#0e2e38`, mas **segue a cor de destaque de cada prefeitura em runtime** (ver seção seguinte) — fundo **chapado** desde 16/10 (era degradê com `--cor-marca-clara`, token removido). Não usar em botão de conteúdo |
 | `--cor-marca-texto` / `--cor-marca-texto-suave` | texto sobre o cabeçalho | Quase-branco com matiz teal, fixo (não acompanha a prefeitura) |
-| `--cor-primaria` / `--cor-primaria-forte` | botões, links, foco, aba ativa | Teal-azulado por padrão — a cor de "ação" do sistema, também por prefeitura (mesma cor de destaque que alimenta `--cor-marca`, mas calculada separada) |
-| `--cor-sucesso` / `--cor-sucesso-fundo` | chip "no horário", ícone de atendido, notificação de sucesso | Verde natural, não neon |
-| `--cor-erro` / `--cor-erro-fundo` | chip "faltou", notificação de erro | Vermelho-tijolo institucional |
-| `--cor-aviso` / `--cor-aviso-fundo` | chip "atrasado", linha atrasada na recepção | Âmbar — reservado pra semântica de atraso/atenção, não usar em "informativo neutro" |
-| `--cor-info` / `--cor-info-fundo` | `.aviso` (caixa informativa neutra), cabeçalho de tabela, hover de linha | Mesmo tom do primária, fundo bem claro |
-| `--cor-encaixe` / `--cor-encaixe-fundo` | chip "encaixe" | Roxo — só esse chip usa roxo no sistema inteiro |
+| `--cor-primaria` / `--cor-primaria-forte` | botões, links, foco, aba ativa | `#d52e5f` — valor exato do Conecta Cidades (16/10, era um teal-azulado) — a cor de "ação" do sistema, por prefeitura (mesma cor de destaque que alimenta `--cor-marca`) |
+| `--cor-sucesso` / `--cor-sucesso-fundo` | chip "no horário", ícone de atendido, notificação de sucesso | Hue do Conecta Cidades (`#32c787`), mas o **token principal é uma versão escurecida** (`#218158`) — o valor exato deles falha contraste WCAG AA como texto pequeno (~2.2:1); o "fundo" claro continua usando o tom exato deles em 12% de alpha, então a cor real da marca aparece em todo chip, só o texto escureceu pra ficar legível |
+| `--cor-erro` / `--cor-erro-fundo` | chip "faltou", notificação de erro | Mesmo raciocínio: hue do Conecta Cidades (`#ff6b68`), token principal escurecido (`#b3433f`, ~5.5:1) |
+| `--cor-aviso` / `--cor-aviso-fundo` | chip "atrasado", linha atrasada na recepção | Mesmo raciocínio: hue do Conecta Cidades (`#ffc721`), token principal escurecido bem mais (`#946200`, ~5.2:1) — amarelo puro precisa escurecer MUITO pra virar texto legível, por isso parece mais "âmbar/marrom" que "amarelo" |
+| `--cor-info` / `--cor-info-fundo` | `.aviso` (caixa informativa neutra), cabeçalho de tabela, hover de linha | Mesmo tom do primária (`#d52e5f`), fundo em 12% alpha |
+| `--cor-encaixe` / `--cor-encaixe-fundo` | chip "encaixe" | Roxo (`#5b3aa6`) — cor nossa, o Conecta Cidades não define uma pra esse caso; só esse chip usa roxo no sistema inteiro |
 
 Regra importante: **`--cor-aviso` (âmbar, "atrasado") e `.aviso` (caixa informativa neutra)
-não são a mesma coisa** — antes da reforma os dois usavam o mesmo amarelo e ficava ambíguo
-se uma caixa amarela era "informação" ou "atenção". Agora `.aviso` é azul-teal (info) e só
-chip/linha de "atrasado" usa âmbar.
+não são a mesma coisa** — os dois já usaram o mesmo amarelo numa versão anterior e ficava
+ambíguo se uma caixa amarela era "informação" ou "atenção". Agora `.aviso` usa a cor de ação
+(info) e só chip/linha de "atrasado" usa âmbar.
+
+**Se precisar do valor EXATO de marca do Conecta Cidades** (não o token escurecido) — por
+exemplo pra um ícone grande ou um fill onde não tem texto por cima e contraste não é
+problema — use o hex literal documentado nos comentários do `:root` em `index.css`, não
+`--cor-sucesso`/`--cor-erro`/`--cor-aviso` (que são a versão calibrada pra texto). Não existe
+token separado pra isso hoje porque nenhum lugar do sistema precisou dele ainda — se
+precisar, é um token novo a criar, documentado aqui, não um hex solto no componente.
+
+### Raio de borda
+
+Família de 3 tamanhos (16/10, substituindo um valor único de 12px), valores exatos do design
+system do Conecta Cidades (família "painel administrativo", a mais parecida com o nosso
+produto — telas internas de staff, não público):
+
+| Token | Valor | Uso |
+|---|---|---|
+| `--raio-pequeno` | 7px | botão, input, select, ícone pequeno |
+| `--raio-cartao` | 10px | `.cartao`, `.tabela-cartao`, tile/linha clicável, cabeçalho de tabela (`th`) |
+| `--raio-modal` | 16px | modal/overlay de verdade (`.modal-cartao`, `.modal-selecao-guiche`) |
+
+Pílula (`border-radius: 999px`, usada direto, sem token) continua permitida em chip, badge,
+etiqueta, pill de guichê, barra de progresso — a proibição do Conecta Cidades é só pra
+**botão de formulário** totalmente arredondado, documentada explicitamente por eles como uma
+exceção ("filtros são pills, chips podem ser pill — a regra é sobre botão de formulário").
+Círculo (`border-radius: 50%`, ícone circular, bolinha de cor) também não entra nessa família,
+não é coberto pela regra deles.
+
+**Painel de TV usa `--raio-modal` (16px) nos 3 cartões grandes** (`.chamada-atual`,
+`.historico`, `.aguardando-bloco`), não `--raio-cartao` — o painel de TV é a tela PÚBLICA do
+sistema, equivalente ao "site do cidadão" do Conecta Cidades (que usa raio maior, 8px base/
+16px modal), não ao "painel administrativo" interno (7px/10px) que todas as outras telas
+seguem. O cabeçalho interno da tabela do painel (`.historico-cabecalho`) continua com 8px
+fixo (não um token) — está dentro do padding do cartão, não precisa casar com o raio externo.
+
+## Botão de ícone em tabela — discreto, sem fundo sólido (16/10)
+
+Reclamação direta: "esses botões gigantes dessas tabelas... não precisa do background, tá
+feio assim, faça mais discretos". `.botao-icone` (gear de configurações, lixeira de excluir,
+reativar, copiar link) herdava o `button { background: var(--cor-primaria); color: #fff }`
+global — virava um quadrado de 38px sólido na cor de ação, chamativo demais numa coluna de
+ação dentro de uma linha de tabela. Agora é **ghost**: 32px, sem fundo, sem borda, só o ícone
+na cor (`--cor-texto-suave` por padrão, `--cor-sucesso`/`--cor-erro`/`--cor-primaria` nas
+variantes), com um tingimento bem leve só no hover (`--cor-hover` na base, o "-fundo" da cor
+semântica nas variantes) — mesmo princípio de "indicar clicável sem chamar atenção sozinho"
+já usado em `.linha-guiche-resumo`/`.quadro-guiche`. `.botao-icone-secundario` perdeu a borda
+que a distinguia das outras — não fazia mais sentido já que nenhuma variante tem fundo sólido
+agora, a cor do ícone já basta pra diferenciar. Lembrar do `:not(:disabled)` em cada variante
+nova (armadilha de especificidade já documentada acima) — `.botao-icone-sucesso`/`-perigo`/
+`-secundario` todas precisam repetir isso no seletor de hover.
+
+## Cabeçalho mostra o guichê resolvido, ao lado do nome (16/10)
+
+`<Cabecalho>` ganhou um prop opcional `guiche?: string | null` — quando preenchido, aparece
+concatenado no `subcabecalho-usuario`: `"ATENDENTE: NOME - GUICHÊ X"`. Só a tela do atendente
+passa esse prop hoje (`SalaDeEspera.tsx`, computado juntando os nomes de guichê já resolvidos
+em `guicheSelecionadoPorGrade` — um atendente com mais de uma grade pode ter mais de um
+guichê ao mesmo tempo, aí os nomes vêm separados por vírgula; grade sem guichê escolhido
+ainda não entra na lista). Recepção/gestor/admin não têm guichê — continuam passando o
+`Cabecalho` sem esse prop, que é opcional de propósito.
+
+## Blocos de grade sem moldura (16/10)
+
+`.grupo-grade` (cada bloco de grade dentro de "Sala de espera", agrupado por unidade) tinha
+border+padding+fundo (`--cor-fundo`) em volta — reclamação direta: "não quero essa borda e
+esse espaçamento... deixe com a largura normal". Removido por completo — o bloco agora é só
+`display:flex; flex-direction:column; gap` (espaço vertical entre o cabeçalho da grade e a
+tabela dela), direto sobre o fundo da página, mesmo padrão de "bloco sem cartão, só a tabela
+tem `.tabela-cartao`" já usado no resto da tela do atendente (ver seção "Tabelas" acima). Não
+reintroduzir uma moldura aqui achando que "falta separação visual" — o espaçamento vertical
+(`--espaco-5` em `.grupos-unidade`, `--espaco-3` em `.grupo-unidade`) já é o que separa um
+bloco do outro.
 
 ## Cores configuráveis pelo admin, por prefeitura (22/09, ampliado 23/09)
 
@@ -79,16 +251,16 @@ O admin escolhe 2 cores por prefeitura, na tela "Configurações da Prefeitura"
 tokens que já existiam: destaque → `--cor-primaria` (+ `--cor-primaria-forte`, calculada
 escurecendo a cor em ~18%, pro hover dos botões), clara → `--cor-info`/`--cor-info-fundo`.
 
-**Desde 23/09, a cor de destaque também alimenta `--cor-marca`/`--cor-marca-clara`** (fundo do
-`<Cabecalho>` e da sidebar do gestor) — decisão revertida da original: antes eram uma
-identidade fixa, mais escura, separada de propósito, porque só existia uma prefeitura no
-sistema; agora que o admin cadastra várias, cada uma com sua própria paleta, não fazia
-sentido todo mundo ver o mesmo teal-marinho fixo independente da prefeitura. `--cor-marca` =
-a própria cor de destaque; `--cor-marca-clara` = a mesma cor clareada ~22% em direção ao
-branco (função `clarear` em `tema.ts`, o inverso de `escurecer`) — pra manter um degradê de
-duas pontas a partir de só uma cor escolhida pelo admin. `--cor-marca-texto` continua fixo
-(quase-branco), então cores de destaque muito claras podem ter pouco contraste no cabeçalho —
-risco aceito, mesmo problema que já existe em botões com `--cor-primaria` muito clara.
+**Desde 23/09, a cor de destaque também alimenta `--cor-marca`** (fundo do `<Cabecalho>` e da
+sidebar do gestor) — decisão revertida da original: antes era uma identidade fixa, mais
+escura, separada de propósito, porque só existia uma prefeitura no sistema; agora que o
+admin cadastra várias, cada uma com sua própria paleta, não fazia sentido todo mundo ver o
+mesmo teal-marinho fixo independente da prefeitura. `--cor-marca` = a própria cor de
+destaque, usada como fundo CHAPADO (sem variante clareada — `--cor-marca-clara` e a função
+`clarear()` que a calculava foram removidos em 16/10 junto com o degradê, ver
+"Reestruturação" no topo da skill). `--cor-marca-texto` continua fixo (quase-branco), então
+cores de destaque muito claras podem ter pouco contraste no cabeçalho — risco aceito, mesmo
+problema que já existe em botões com `--cor-primaria` muito clara.
 
 Aplicadas em **runtime**, não build-time (`frontend/src/tema.ts`,
 `aplicarTemaPrefeitura(corDestaque, corClara)`) — seta as CSS custom properties direto no
@@ -125,11 +297,13 @@ projeto (`layout-recepção.png`/`layout atendente.png`) — **não inventar var
    seleção. Não voltar a separar isso em dois elementos ("Guichê 2" + um botão "Trocar" ao
    lado) — foi assim antes e o dono do produto pediu pra fundir.
 
-**Fundo sempre sólido, nunca transparente** — pedido explícito e repetido do dono do produto.
-Usa `--cor-marca`/`--cor-marca-clara` em gradiente sutil, nunca uma cor de conteúdo
-(`--cor-primaria`) nem `transparent`/`rgba` com alpha baixo no fundo do cabeçalho em si (os
-botões *dentro* do cabeçalho é que usam `rgba(255,255,255,...)` pra contrastar sobre o fundo
-sólido).
+**Fundo sempre sólido, nunca transparente** — pedido explícito e repetido do dono do produto,
+e desde 16/10 também proibição explícita do design system do Conecta Cidades ("o produto usa
+cor chapada", ver "Reestruturação" no topo). Usa `--cor-marca` CHAPADO — nunca gradiente
+(era `linear-gradient(..., --cor-marca-clara, --cor-marca)` até 16/10), nunca uma cor de
+conteúdo (`--cor-primaria`) nem `transparent`/`rgba` com alpha baixo no fundo do cabeçalho em
+si (os botões *dentro* do cabeçalho é que usam `rgba(255,255,255,...)` pra contrastar sobre o
+fundo sólido).
 
 **Sempre 100% da largura da viewport, não só até a borda do conteúdo** (22/09, correção de
 uma primeira tentativa que só sangrava até a borda de `.pagina`): `<Cabecalho>` é renderizado
@@ -263,11 +437,14 @@ pessoal só porque nasceu dentro de uma tela de atendente.
 ## Busca
 
 Todo bloco com uma lista que pode crescer (mais de ~10 itens) ganha uma busca por nome/
-protocolo, reaproveitando `.barra-busca`/`.campo-busca` (mesmo padrão da recepção) — mesmo
-que não tenha um botão de ação ao lado (nesse caso, `.campo-busca` sozinho dentro de
-`.barra-busca`, que ainda cuida do espaçamento). Normalizar a busca (minúsculas, sem
-pontuação) com a mesma função `normalizarBusca` já repetida em `Recepcao.tsx`/
-`SalaDeEspera.tsx` — se aparecer uma terceira vez, vale extrair pra um util compartilhado.
+protocolo (ou outro campo relevante — "Grade de horário" filtra por serviço, 16/10),
+reaproveitando `.barra-busca`/`.campo-busca` (mesmo padrão da recepção) — mesmo que não tenha
+um botão de ação ao lado (nesse caso, `.campo-busca` sozinho dentro de `.barra-busca`, que
+ainda cuida do espaçamento). Normalizar a busca (minúsculas, sem pontuação) com
+`normalizarBusca`, extraída em 16/10 pra `frontend/src/busca.ts` (era copiada igual em
+`Recepcao.tsx`/`SalaDeEspera.tsx`, virou uma terceira cópia em `Grades.tsx` — na hora certa
+de extrair, como a versão anterior desta nota já previa) — importar de lá, nunca redeclarar
+local de novo.
 
 ## Botões e estados compostos (ícone + informação extra)
 
@@ -326,8 +503,8 @@ Tons derivados desse acento (ex. o fundo do cabeçalho da tabela, o pill de guic
 referenciar um token operacional como `--cor-info-fundo` aqui, porque essa tela nunca roda
 `aplicarTemaPrefeitura` e esse token nunca seria atualizado nela.
 
-A tipografia (`Public Sans`/`IBM Plex Mono`) continua unificada com o resto do site, como já
-estava.
+A tipografia (`Montserrat`, ver "Reestruturação" no topo) continua unificada com o resto do
+site, como já estava.
 
 ## Responsividade mobile — regras pra não regredir (23/09)
 

@@ -68,9 +68,12 @@ join com `unidades`) — não só uma unidade. Nome + serviço de cada grade, e 
 - **Copiar link do painel** — cada grade tem seu próprio painel público
   (`/painel/{gradeId}`), diferente de antes (um painel por unidade).
 - **Engrenagem** → abre `/gestor/grades/{gradeId}`, a tela de configurações daquela grade
-  especificamente: identificação (nome de exibição, ativar/desativar), guichês/salas (CRUD,
-  igual já existia), SLA da recepção, SLA do atendimento, configurações do painel. Tudo que
-  antes vivia em "Gerenciar CRAS" por unidade agora vive aqui, por grade.
+  especificamente: identificação (nome de exibição, ativar/desativar), SLA da recepção, SLA
+  do atendimento, configurações do painel — essas sim por grade. **Guichês/salas (16/10) são
+  a exceção**: o CRUD continua acessível a partir dessa mesma tela, mas edita a lista da
+  UNIDADE daquela grade (compartilhada com as outras grades do mesmo local físico, ver skill
+  `regras-negocio-fila`) — um guichê criado/editado numa grade aparece nas outras grades da
+  mesma unidade também, com uma nota (`.dica`) explicando isso na tela.
 
 ### Painéis (`/gestor/paineis`)
 
@@ -179,8 +182,8 @@ N:N — ver skill `modelo-dados`), inclusive de **unidades físicas diferentes**
 atendente com grades numa unidade A e numa unidade B). A regra de negócio confirmada pelo
 dono do produto é explícita: "o atendente NÃO escolhe uma grade pra trabalhar — ele vê e
 trabalha em TODAS as que estiver alocado, consolidadas". Não existe mais nenhuma tela/modal
-de seleção de grade — só de **guichê**, e mesmo assim por grade, não bloqueando a tela
-inteira (ver abaixo).
+de seleção de grade — só de **guichê**, e desde 16/10 por **unidade** (ver abaixo), não
+bloqueando a tela inteira.
 
 Todos os dados operacionais (chamados, sala de espera, atendidos/ausentes hoje) vêm de
 endpoints consolidados que derivam a lista de grades do próprio usuário autenticado no
@@ -188,27 +191,35 @@ backend (`GET /api/v1/atendente/grades*`, `internal/handlers/fila.go`, função
 `minhasGrades`) — o frontend nunca envia a lista de IDs, evitando N requisições (uma por
 grade) e qualquer risco de o cliente pedir dados de uma grade que não é dele.
 
-### Guichê é por grade, escolhido sob demanda (não é mais um gate)
+### Guichê é por UNIDADE, escolhido sob demanda (16/10 — não é mais um gate, nem por grade)
 
-Cada grade que o atendente tem resolve o próprio guichê de forma independente — ao entrar,
-o sistema tenta reocupar automaticamente o guichê lembrado (`localStorage`, chave por grade)
-de cada uma; se conseguir, aquela grade já aparece pronta pra trabalhar. Só a(s) grade(s)
-sem guichê resolvido mostram uma pílula "Selecionar guichê" (clicável, abre um modal
-pequeno só daquela grade) — as outras já resolvidas continuam operando normalmente, nada
-trava esperando essa escolha. **Ocupação em tempo real (22/09)**: um guichê já escolhido por
-outro atendente aparece desabilitado no modal, com "Ocupado por {nome}" — ver skill
-`regras-negocio-fila` pro mecanismo de heartbeat por trás disso (agora um heartbeat por
-grade/guichê ocupado, não mais um só).
+**Mudou em 16/10**: até então, cada GRADE que o atendente tinha resolvia seu próprio guichê
+de forma independente (uma pílula "Selecionar guichê" por grade) — pedido direto do dono do
+produto pra mudar isso: "não deve ter opção de escolher guichê pra cada grade que estiver
+alocado... a pessoa só escolhe um e já serve pra todos, pq ali é o lugar que ela vai atender
+as demandas". Agora a escolha é por **UNIDADE** (local físico): o atendente escolhe UM
+guichê por unidade, e ele vale automaticamente pra todas as grades dele naquela unidade — só
+precisa escolher mais de um se tiver grades em unidades físicas diferentes. Na tela, a
+pílula "Selecionar guichê" subiu do cabeçalho de cada bloco de grade pro cabeçalho do GRUPO
+de unidade (mostrado uma vez por local físico, não mais uma vez por serviço). O sistema tenta
+reocupar automaticamente o guichê lembrado (`localStorage`, chave por unidade) de cada uma;
+se conseguir, aquela unidade (e todas as grades dela) já aparece pronta pra trabalhar. Só a(s)
+unidade(s) sem guichê resolvido mostram a pílula clicável — as outras já resolvidas continuam
+operando normalmente, nada trava esperando essa escolha. **Ocupação em tempo real (22/09)**:
+um guichê já escolhido por outro atendente aparece desabilitado no modal, com "Ocupado por
+{nome}" — ver skill `regras-negocio-fila` pro mecanismo de heartbeat por trás disso (um
+heartbeat por unidade/guichê ocupado).
 
 ### Realocação ao vivo, sem logout/reload
 
 A lista de grades do atendente é revalidada periodicamente (a cada 8s, `GET /sessao`)
 enquanto a tela está aberta — se um gestor/admin adicionar ou remover uma grade dele nesse
-meio tempo, a mudança aparece sozinha: uma grade nova ganha sua própria seção (com guichê a
-resolver); uma grade removida some, e se havia um guichê ocupado nela, é liberado no backend
-automaticamente. Isso fecha um requisito explícito da auditoria de 23/09: "não quero
-situações em que a alteração aparece apenas depois de logout/login ou apenas depois de
-atualizar manualmente a página".
+meio tempo, a mudança aparece sozinha: uma grade nova entra na seção da unidade dela (criando
+a seção se for a primeira grade daquela unidade, com guichê a resolver); uma grade removida
+some, e **só se foi a ÚLTIMA grade daquela unidade** (16/10 — antes a liberação era por
+grade), o guichê que estava ocupado nela é liberado no backend automaticamente. Isso fecha um
+requisito explícito da auditoria de 23/09: "não quero situações em que a alteração aparece
+apenas depois de logout/login ou apenas depois de atualizar manualmente a página".
 
 Tela com 3 blocos lado a lado, **sem cartão em volta do título** (ver skill
 `identidade-visual`):
@@ -228,9 +239,10 @@ ganha os botões de ação:
 - **Marcar presente**: grava `atendido_em`, `status` vira `atendido`.
 Um chamado vira **órfão** quando o dono já rechamou pelo menos uma vez E já seguiu em frente
 pra outra pessoa **naquela mesma grade** — qualquer atendente ocioso QUE TAMBÉM tenha aquela
-grade alocada pode **assumir** esse chamado (precisa ter um guichê já resolvido nela; se não
-tiver, o modal daquela grade abre pra escolher antes de assumir). Enquanto existir qualquer
-órfão numa grade, ninguém consegue puxar gente nova da sala de espera DAQUELA grade.
+grade alocada pode **assumir** esse chamado (precisa ter um guichê já resolvido na UNIDADE
+dela, 16/10; se não tiver, o modal daquela unidade abre pra escolher antes de assumir).
+Enquanto existir qualquer órfão numa grade, ninguém consegue puxar gente nova da sala de
+espera DAQUELA grade.
 
 ### "Sala de espera"
 
@@ -238,12 +250,15 @@ tiver, o modal daquela grade abre pra escolher antes de assumir). Enquanto exist
 mesmo local devem aparecer agrupadas visualmente, não como filas independentes" — ver o
 exemplo de árvore na seção "Painéis" do Gestor, acima — a mesma regra vale aqui). O cabeçalho da unidade
 só aparece quando o atendente tem grades de mais de uma unidade; com uma só, seria ruído
-sem informação nova. Dentro de cada grupo de grade:
+sem informação nova. **O indicador/seletor de guichê (16/10) fica no cabeçalho do grupo de
+UNIDADE**, não mais no de cada grade — uma escolha só, compartilhada por todas as grades
+daquele local físico (ver seção "Guichê é por UNIDADE" acima). Dentro de cada grupo de grade:
 - **Aguardando**: quem está em `sala_espera` NAQUELA grade, ordenado pela regra de
   prioridade (no-horário primeiro; atrasado e encaixe competem juntos depois, por ordem de
-  chegada). Botão **Chamar próximo** e o indicador de guichê ficam no cabeçalho do próprio
-  grupo da grade — desabilitado se o atendente tem uma chamada pendente não-rechamada NAQUELA
-  grade, ou se existe qualquer órfão NELA (nunca por causa de outra grade).
+  chegada). Botão **Chamar próximo** fica no cabeçalho do próprio grupo da grade (usa o
+  guichê já resolvido da unidade) — desabilitado se o atendente tem uma chamada pendente
+  não-rechamada NAQUELA grade, ou se existe qualquer órfão NELA (nunca por causa de outra
+  grade).
 - **Ausentes**: aba separada, ainda compartilhada entre atendentes mas mostrada como lista
   única com uma coluna "Grade" (não agrupada como a de aguardando, por ser só consulta —
   quem faltou depois de já ter sido chamado, hoje, em qualquer grade do atendente).

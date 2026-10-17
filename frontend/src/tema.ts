@@ -13,18 +13,6 @@ function escurecer(hex: string, fator: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-// Oposto de escurecer — desloca cada canal em direção ao branco. Usado pra derivar o
-// segundo tom do degradê do cabeçalho/sidebar (--cor-marca-clara) a partir de uma única cor
-// escolhida pelo admin (23/09) — sem isso não dava pra ter um degradê de duas pontas a
-// partir de só uma cor configurada.
-function clarear(hex: string, fator: number): string {
-  const num = parseInt(hex.replace("#", ""), 16);
-  const r = Math.min(255, Math.round(((num >> 16) & 0xff) + (255 - ((num >> 16) & 0xff)) * fator));
-  const g = Math.min(255, Math.round(((num >> 8) & 0xff) + (255 - ((num >> 8) & 0xff)) * fator));
-  const b = Math.min(255, Math.round((num & 0xff) + (255 - (num & 0xff)) * fator));
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-}
-
 // Bug real corrigido (23/09, achado pedido do dono do produto: "a cor de Jaboatão só
 // interfere apenas Jaboatão, e assim com cada cidade" — mas o admin estava herdando a cor
 // de quem quer que tivesse logado por último naquela aba). `aplicarTemaPrefeitura` grava a
@@ -37,7 +25,7 @@ function clarear(hex: string, fator: number): string {
 // (e nunca devem ter) a cor de uma prefeitura específica.
 export function resetarTema() {
   const raiz = document.documentElement.style;
-  for (const prop of ["--cor-primaria", "--cor-primaria-forte", "--cor-info", "--cor-info-fundo", "--cor-marca", "--cor-marca-clara"]) {
+  for (const prop of ["--cor-primaria", "--cor-primaria-forte", "--cor-info", "--cor-info-fundo", "--cor-marca"]) {
     raiz.removeProperty(prop);
   }
 }
@@ -49,14 +37,14 @@ export function aplicarTemaPrefeitura(corDestaque: string | null | undefined, co
   raiz.setProperty("--cor-primaria-forte", escurecer(corDestaque, 0.18));
   raiz.setProperty("--cor-info", corDestaque);
   raiz.setProperty("--cor-info-fundo", corClara);
-  // Cabeçalho (Cabecalho.tsx) e sidebar do gestor (GestorLayout.tsx) usavam uma cor de marca
-  // FIXA (--cor-marca/--cor-marca-clara), separada de propósito da cor de ação desde a
-  // décima quarta rodada — fazia sentido enquanto só existia uma prefeitura. Agora que o
-  // admin cadastra várias, cada uma com sua paleta, essas duas telas também precisam seguir
-  // a cor da prefeitura de quem está logado (pedido explícito, 23/09) — não faz mais sentido
-  // todo mundo ver o mesmo teal-marinho fixo não importa a prefeitura.
+  // Cabeçalho (Cabecalho.tsx) e sidebar do gestor (GestorLayout.tsx) seguem a cor de
+  // destaque da prefeitura de quem está logado (23/09) — não faz mais sentido todo mundo ver
+  // o mesmo teal-marinho fixo não importa a prefeitura. Alinhamento com o design system do
+  // Conecta Cidades (24/09): o fundo do cabeçalho/sidebar virou CHAPADO (sem degradê — "o
+  // produto usa cor chapada", proibição explícita deles), então só precisa de UM tom
+  // (`--cor-marca` = a própria `corDestaque`) — o segundo tom clareado que alimentava o
+  // degradê (`--cor-marca-clara`) não existe mais, nem a função `clarear` que o calculava.
   raiz.setProperty("--cor-marca", corDestaque);
-  raiz.setProperty("--cor-marca-clara", clarear(corDestaque, 0.22));
 }
 
 // Painel de TV (22/09, pedido explícito do dono do produto): o fundo da tela passa a usar a

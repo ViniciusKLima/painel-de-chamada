@@ -269,7 +269,7 @@ func (c *Controllers) GetGuiches(w http.ResponseWriter, r *http.Request) {
 		views.ResponderErro(w, http.StatusForbidden, "papel_sem_acesso", "apenas atendente, gestor ou admin")
 		return
 	}
-	guiches, err := c.Repo.ListarGuichesAtivos(r.Context(), grade.ID)
+	guiches, err := c.Repo.ListarGuichesAtivos(r.Context(), grade.UnidadeID)
 	if err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
@@ -295,11 +295,15 @@ func (c *Controllers) PostOcuparGuiche(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	guicheID := chi.URLParam(r, "guicheId")
-	guiche, err := c.Repo.OcuparGuiche(r.Context(), grade.ID, guicheID, usuario.ID)
+	// Guichê pertence à UNIDADE, não à grade (16/10, ver domain.Guiche) — a rota continua
+	// "por grade" (é dali que o atendente está chamando), mas a ocupação em si vale pra
+	// unidade inteira: escolher um guichê por QUALQUER grade dessa unidade já o marca
+	// ocupado pras outras grades dela também, sem precisar escolher de novo.
+	guiche, err := c.Repo.OcuparGuiche(r.Context(), grade.UnidadeID, guicheID, usuario.ID)
 	if err != nil {
 		switch err {
 		case repository.ErrNaoEncontrado:
-			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 		case repository.ErrGuicheOcupado:
 			views.ResponderErro(w, http.StatusConflict, "guiche_ocupado", "outro atendente ja esta usando este guiche")
 		default:
@@ -323,7 +327,7 @@ func (c *Controllers) PostLiberarGuiche(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	guicheID := chi.URLParam(r, "guicheId")
-	if err := c.Repo.LiberarGuiche(r.Context(), grade.ID, guicheID, usuario.ID); err != nil {
+	if err := c.Repo.LiberarGuiche(r.Context(), grade.UnidadeID, guicheID, usuario.ID); err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
 	}
@@ -370,15 +374,32 @@ func (c *Controllers) GetMinhasGrades(w http.ResponseWriter, r *http.Request) {
 	views.ResponderJSON(w, http.StatusOK, views.GradesResumoJSON(grades))
 }
 
-// GetMinhasGradesGuiches: GET /api/v1/atendente/grades/guiches — guichês de TODAS as grades
-// do atendente, consolidados (cada guichê continua pertencendo a uma grade só, ver
-// Guiche.GradeId no payload).
+// idsDeUnidadesUnicas extrai as unidadeIds DISTINTAS das grades do atendente — um atendente
+// com 2 grades na mesma unidade (caso comum: serviço + encaixe do mesmo local) não deve gerar
+// guichê duplicado na resposta (guichê pertence à unidade, não à grade, ver domain.Guiche).
+func idsDeUnidadesUnicas(grades []repository.GradeComUnidade) []string {
+	vistos := make(map[string]bool, len(grades))
+	ids := make([]string, 0, len(grades))
+	for _, g := range grades {
+		if vistos[g.UnidadeID] {
+			continue
+		}
+		vistos[g.UnidadeID] = true
+		ids = append(ids, g.UnidadeID)
+	}
+	return ids
+}
+
+// GetMinhasGradesGuiches: GET /api/v1/atendente/grades/guiches — guichês de TODAS as unidades
+// onde o atendente tem grade alocada, consolidados (16/10 — guichê pertence à unidade, não à
+// grade, ver Guiche.UnidadeId no payload; um atendente com várias grades na mesma unidade vê
+// o mesmo guichê UMA vez só, não um por grade).
 func (c *Controllers) GetMinhasGradesGuiches(w http.ResponseWriter, r *http.Request) {
 	_, grades, ok := c.minhasGrades(w, r)
 	if !ok {
 		return
 	}
-	guiches, err := c.Repo.ListarGuichesAtivosPorGrades(r.Context(), idsDeGrades(grades))
+	guiches, err := c.Repo.ListarGuichesAtivosPorUnidades(r.Context(), idsDeUnidadesUnicas(grades))
 	if err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
@@ -488,9 +509,9 @@ func (c *Controllers) PostChamarProximo(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	guicheID := chi.URLParam(r, "guicheId")
-	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), grade.ID, guicheID)
+	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), grade.UnidadeID, guicheID)
 	if err != nil {
-		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 		return
 	}
 	if !guiche.Ativo {
@@ -573,7 +594,7 @@ func (c *Controllers) PostRechamar(w http.ResponseWriter, r *http.Request) {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
 	}
-	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), a.GradeID, chamada.GuicheID)
+	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), a.UnidadeID, chamada.GuicheID)
 	if err == nil {
 		c.empurrarParaPainel(a.GradeID, *a, guiche.Nome)
 	}
@@ -702,9 +723,9 @@ func (c *Controllers) PostAssumirChamada(w http.ResponseWriter, r *http.Request)
 		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "agendamento nao encontrado nesta unidade")
 		return
 	}
-	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), a.GradeID, corpo.GuicheID)
+	guiche, err := c.Repo.BuscarGuichePorID(r.Context(), a.UnidadeID, corpo.GuicheID)
 	if err != nil {
-		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 		return
 	}
 	if !guiche.Ativo {

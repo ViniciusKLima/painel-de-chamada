@@ -74,7 +74,7 @@ func criarFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatalf("ResolverOuCriarGrade: %v", err)
 	}
-	guiches, err := r.ListarGuichesAtivos(ctx, grade.ID)
+	guiches, err := r.ListarGuichesAtivos(ctx, unidade.ID)
 	if err != nil || len(guiches) == 0 {
 		t.Fatalf("grade nova deveria ter nascido com 1 guichê padrão: %v", err)
 	}
@@ -116,7 +116,7 @@ func (f *fixture) limpar(t *testing.T) {
 	exec(`delete from chamadas where agendamento_id in (select id from agendamentos where unidade_id = $1)`, f.unidadeID)
 	exec(`delete from agendamentos where unidade_id = $1`, f.unidadeID)
 	exec(`delete from usuario_grades where usuario_id = any($1)`, []string{f.usuarioA, f.usuarioB})
-	exec(`delete from guiches where grade_id = $1`, f.gradeID)
+	exec(`delete from guiches where unidade_id = $1`, f.unidadeID)
 	exec(`delete from grades where unidade_id = $1`, f.unidadeID)
 	exec(`delete from usuarios where id = any($1)`, []string{f.usuarioA, f.usuarioB})
 	exec(`delete from unidades where id = $1`, f.unidadeID)
@@ -437,14 +437,14 @@ func TestReativarGradeUsuarioEGuiche(t *testing.T) {
 	}
 
 	// Guichê (precisa de um segundo pra poder excluir o primeiro sem bater no ultimo_guiche)
-	segundo, err := f.r.CriarGuiche(ctx, f.gradeID, NovoGuicheOuSala{Nome: "TESTE_AUTOMATIZADO_GUICHE_2", Tipo: domain.TipoGuicheGuiche, Capacidade: 1})
+	segundo, err := f.r.CriarGuiche(ctx, f.unidadeID, NovoGuicheOuSala{Nome: "TESTE_AUTOMATIZADO_GUICHE_2", Tipo: domain.TipoGuicheGuiche, Capacidade: 1})
 	if err != nil {
 		t.Fatalf("CriarGuiche: %v", err)
 	}
-	if err := f.r.ExcluirGuiche(ctx, f.gradeID, f.guicheID); err != nil {
+	if err := f.r.ExcluirGuiche(ctx, f.unidadeID, f.guicheID); err != nil {
 		t.Fatalf("ExcluirGuiche: %v", err)
 	}
-	guicheReativado, err := f.r.ReativarGuiche(ctx, f.gradeID, f.guicheID)
+	guicheReativado, err := f.r.ReativarGuiche(ctx, f.unidadeID, f.guicheID)
 	if err != nil {
 		t.Fatalf("ReativarGuiche: %v", err)
 	}

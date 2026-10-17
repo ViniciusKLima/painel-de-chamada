@@ -261,3 +261,107 @@ prefeitura está fora do ar", o segundo é "essa pessoa/token não vale". Vale l
   apontando pro mesmo município). Se isso for necessário aqui também, o schema precisa de uma
   tabela `prefeitura_emissores` em vez de uma coluna única — não mexer nisso sem necessidade
   confirmada.
+
+## Confirmação por documentação OFICIAL real (16/10) — deixa de ser inferência de produto irmão
+
+Até aqui, tudo acima vinha de um produto IRMÃO (Emissão de Carteiras) + um token real decodificado
+manualmente — nunca da documentação oficial do fluxo em si. Em 16/10, o dono do produto deu acesso
+a uma instância admin real da MESMA plataforma (`pvhmais.portovelho.ro.gov.br/docs/integracoes` —
+Porto Velho-RO, não Jaboatão, mas é o doc genérico "Conecta Cidades — Integrações Externas"
+v1.0.0, o mesmo produto, versionado — valores como `iss` mudam por município, o FLUXO e os
+endpoints não). Essa doc tem uma seção dedicada **"Login Integrado (SSO) — Servidor"** (distinta
+de "— Cidadão", que é outro fluxo, pra autenticar munícipe, não funcionário) — confirma o desenho
+desta skill quase exatamente, e acrescenta uma peça que faltava:
+
+**Fluxo, confirmado literalmente**: "Servidor faz login no painel administrativo da prefeitura →
+clica num link customizado com integração JWT habilitada → sistema gera um token JWT no momento
+do clique → servidor é direcionado pro sistema externo com o token na URL
+(`https://exemplo.com/painel-bi?token=...`) → sistema externo valida o token e autentica
+automaticamente." Validade de **30 segundos**, **uso único**, compatível com Keycloak, RS256.
+**A integração é habilitada individualmente por link, na configuração do painel** — ou seja,
+alguém com acesso admin na plataforma da prefeitura precisa CADASTRAR o painel de chamada como
+uma integração antes de qualquer token real ser emitido pra ele (ver "O que falta pra implementar"
+abaixo).
+
+**Claims, confirmadas literalmente** (bate com a seção 3 acima, sem surpresa):
+`sub, iss, aud, iat, exp, jti, preferred_username, email, email_verified, name, roles[],
+department_ids[], unit_ids[], cpf?`. Exemplo real da doc: `"department_ids": [3, 7]`,
+`"unit_ids": [12]` — **confirma que os dois são arrays** (um servidor pode ter mais de uma
+secretaria/unidade), consistente com o que já estava assumido aqui. `cpf`: "é OPCIONAL e
+**normalmente ausente** — nunca assuma presença. Use `sub` ou `preferred_username` como
+identificador" — bate exatamente com a seção 3.
+
+**Peça nova que a skill não tinha: a validação PRECISA de uma segunda chamada, obrigatória,
+pra um endpoint de introspection — não é só verificação de assinatura offline.**
+
+```
+POST /oauth/introspect
+Authorization: Bearer <TOKEN DE API COM PERMISSÃO introspect_api>  -- token nosso, não o do usuário
+Content-Type: application/json
+
+{ "token": "<JWT recebido no ?token= da URL>" }
+```
+
+Resposta (200): `{ "active": true|false, "jti", "aud", "exp", "iat", "payload": {...claims} }` —
+**uma segunda chamada com o MESMO token responde `active: false`** (é isso que implementa o
+"uso único" de verdade — decodificar e verificar a assinatura localmente não é suficiente pra
+saber se aquele token específico já foi consumido antes). Doc oficial, literal: **"Todos os
+sistemas integrados DEVEM chamar este endpoint após as verificações locais"** — não é opcional,
+nem um "nice to have" de segurança extra. Os dois passos são complementares: **"valide localmente
+E DEPOIS chame a introspection (obrigatória)"**. A seção 4 desta skill (validação passo a passo)
+precisa ganhar um passo 8: depois de tudo validado localmente, chamar `/oauth/introspect` e só
+aceitar `active: true` antes de criar a sessão própria — um 429 aqui tem o mesmo tratamento de
+rate limit já documentado na skill `api-conecta-cidades`.
+
+**Descoberta automática, padrão OIDC** (preferir a isso em vez de URL fixa, pra sobreviver rotação
+de chave): `GET /.well-known/openid-configuration` (discovery) e `GET /.well-known/jwks.json`
+(chaves públicas) — ambos sem autenticação, mesmo padrão que a seção 4 já assumia.
+
+## O que falta pra implementar de verdade (resposta direta: dá, mas falta registro, não código)
+
+**Sim, dá pra implementar** — o desenho já é sólido e agora tem confirmação oficial, não só
+inferência. O que falta não é mais "descobrir como funciona", é um registro administrativo do
+lado da plataforma, que só quem tem acesso ao painel admin da prefeitura consegue fazer:
+
+1. **Cadastrar o painel de chamada como uma "integração"/link** no painel administrativo da
+   prefeitura de Jaboatão (`jaboataomaisfacil.jaboatao.pe.gov.br`, não o Porto Velho usado pra
+   ler a doc) — é isso que gera o `aud` de verdade e habilita a emissão de token pra essa
+   integração especificamente.
+2. **Conseguir um token de API com a permissão `introspect_api`**, específico do município de
+   Jaboatão — **distinto** de qualquer token de `scheduling_api`/`dependents_api` já discutido
+   pra outra finalidade (agendamento). Sem esse token, o backend não consegue completar o passo
+   obrigatório de introspection, então não dá pra aceitar nenhum login SSO de verdade.
+3. Confirmar com a equipe da plataforma o mapeamento de `roles` (pendência já listada acima) —
+   agora com uma pergunta concreta pra fazer, já que o formato está 100% confirmado.
+
+Depois desses 3 itens resolvidos (são burocracia/contato com a equipe da plataforma, não
+trabalho de código), a implementação em si segue o desenho que já está pronto nesta skill
+(seções 1-7) mais o passo de introspection acima — **não precisa mais de nenhuma pesquisa**,
+só decidir quando puxar isso do pós-MVP pra dentro do escopo.
+
+## Ambiente de teste real: prefeitura "Smartândia" (16/10)
+
+A Conecta Cidades mantém uma cidade de testes pública de verdade — `mock.conectacidades.app`
+("Smartândia"), com `.well-known/jwks.json` e `.well-known/openid-configuration` reais,
+alcançável sem precisar de credencial de nenhum município real. O dono do produto já tem
+acesso lá (gerou um token de teste real, `roles: ["admin"]`, `aud` já apontando pro domínio
+real do nosso Vercel — confirma que ele já cadastrou o painel como integração lá, resolvendo
+sozinho o item 1 da lista acima, pelo menos pro ambiente de teste).
+
+**Criamos a prefeitura correspondente no nosso banco** (16/10, não é descartável — fica como
+tenant real): `nome='Smartândia'`, `slug='smartandia'`,
+`issuer_jwt='https://mock.conectacidades.app'` — é esse campo que resolve `iss → prefeitura`
+na validação (seção 4, passo 3). Junto, uma secretaria ("Secretaria de Atendimento ao
+Cidadão"/SAC), uma unidade ("CRAS Smartândia Centro"), uma grade ("Atendimento Geral") e um
+guichê padrão — ambiente mínimo já pronto pra testar não só login de admin, mas também
+atendente/recepcionista/gestor via SSO quando o mapeamento de `roles` for exercido de
+verdade.
+
+**Mapeamento `admin` confirmado**: diferente das outras linhas da tabela da seção 6 (ainda
+inferência), o dono do produto confirmou diretamente que `roles: ["admin"]` do token mapeia
+pro nosso `domain.PapelAdmin` (acesso master, sem vínculo de prefeitura/secretaria) — não é
+mais suposição marcada como pendente.
+
+Ainda falta, mesmo pra testar contra a Smartândia: o token de API com permissão
+`introspect_api` (item 2 da lista acima) — sem ele, o passo 8 da validação (introspection
+obrigatória) não tem como ser implementado nem testado de ponta a ponta.

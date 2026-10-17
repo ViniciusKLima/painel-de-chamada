@@ -136,8 +136,12 @@ const (
 	TipoGuicheSala   TipoGuiche = "sala"
 )
 
-// Guiche pertence a uma Grade agora, não mais direto à unidade (22/09) — cada grade tem seu
-// próprio conjunto de guichês/salas.
+// Guiche pertence à Unidade (local físico, 16/10 — voltou de Grade, onde tinha ido em 22/09)
+// — fisicamente um guichê é uma mesa/sala dentro de um local, não de um serviço específico
+// dentro dele; várias grades (filas de serviços diferentes) do mesmo local físico
+// compartilham os mesmos guichês. Pedido direto do dono do produto: "não deve ter opção de
+// escolher guichê pra cada grade que estiver alocado... a pessoa só escolhe um e já serve
+// pra todos".
 //
 // OcupadoPorUsuarioID/OcupadoPorNome/OcupadoEm (22/09) — ocupação em tempo real: quando um
 // atendente escolhe um guichê no modal de seleção, esses campos ficam preenchidos, e o
@@ -147,7 +151,7 @@ const (
 // tempo sem heartbeat, sem precisar de nenhuma limpeza manual.
 type Guiche struct {
 	ID                  string
-	GradeID             string
+	UnidadeID           string
 	Nome                string
 	Ativo               bool
 	Tipo                TipoGuiche

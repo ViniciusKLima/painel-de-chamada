@@ -43,6 +43,10 @@ usuarios (
 guiches (id uuid pk, unidade_id fk, nome text, ativo boolean default true)
 -- "Quantidade de guichês/salas" configurável pelo gestor = CRUD nessa tabela, não precisa de
 -- campo de contagem separado.
+-- ATENÇÃO: entre 22/09 e 16/10 essa tabela teve `grade_id` em vez de `unidade_id` (ver seção
+-- "Mudanças (22/09) — introdução da Grade de horário" mais abaixo) — foi revertido pra
+-- `unidade_id` na migration 000010, ver seção "Mudanças (16/10)" no fim deste documento. Esta
+-- definição no topo já reflete o estado ATUAL.
 
 lotes_importacao (
   id uuid pk, secretaria_id fk, usuario_id fk,
@@ -227,7 +231,9 @@ chamada, cooldown de rechamada. `unidades` virou puramente identidade do local f
 
 **`guiches` mudou de `unidade_id` pra `grade_id`** — cada grade tem seu próprio conjunto de
 guichês/salas, não mais compartilhado entre todos os serviços de uma unidade.
-`unique(unidade_id, nome)` virou `unique(grade_id, nome)`.
+`unique(unidade_id, nome)` virou `unique(grade_id, nome)`. **Revertido em 16/10** (migration
+`000010`) — ver seção "Mudanças (16/10)" no fim deste documento; guichê voltou a pertencer à
+unidade, essa decisão de 22/09 não se sustentou na prática.
 
 **`agendamentos` ganhou `grade_id` (not null)**, resolvida automaticamente na importação a
 partir de (`unidade_id`, `servico`) — mesmo padrão de auto-criação já usado pra `unidade`
@@ -378,6 +384,44 @@ numa grade de OUTRA unidade — o vínculo gravava sem erro, mas nunca teria efe
 (morto, silencioso). `PatchUsuario` agora rejeita isso com 400 `corpo_invalido` antes de
 gravar. Atendente não tem essa restrição — pode legitimamente ter grades de unidades físicas
 diferentes (exemplo real confirmado pelo dono do produto).
+
+## Mudanças (16/10): guichê voltou a pertencer à unidade (migration 000010)
+
+Reversão de uma decisão de 22/09 — pedido direto do dono do produto: "não deve ter opção de
+escolher guichê pra cada grade que estiver alocado... a pessoa só escolhe um e já serve pra
+todos, pq ali é o lugar que ela vai atender as demandas". Ver skill `regras-negocio-fila`,
+seção "Guichê é por UNIDADE, não por grade", pro raciocínio completo e o reflexo na UI.
+
+```sql
+guiches (
+  id uuid pk,
+  unidade_id uuid references unidades(id),  -- era grade_id
+  nome text, ativo boolean default true,
+  tipo text check (tipo in ('guiche','sala')) default 'guiche',
+  andar text, capacidade int default 1,
+  ocupado_por_usuario_id uuid references usuarios(id), ocupado_em timestamptz,
+  excluido_em timestamptz,
+  unique (unidade_id, nome) where excluido_em is null  -- índice parcial, só entre ativos
+)
+```
+
+**Dedup real feito pela migration**: duas grades da mesma unidade (principal + encaixe)
+tinham, cada uma, seu próprio "Guichê 1" (nomes idênticos, IDs diferentes) — unificar por
+`unidade_id` colidiria com a unicidade. A migration manteve a linha com mais histórico (soma
+de referências em `agendamentos`+`chamadas`), repontou as referências da outra pra ela, e
+marcou a perdedora como excluída (`excluido_em`) — não é um hard-delete, o registro continua
+no banco pra rastreabilidade, só não aparece mais em nenhuma listagem ativa.
+
+**`ResolverOuCriarGrade` ajustado**: antes criava "Guichê 1" automaticamente pra TODA grade
+nova (23/09). Agora só cria se a UNIDADE daquela grade ainda não tiver nenhum guichê — uma
+segunda grade na mesma unidade não duplica mais um "Guichê 1" que já existe (isso é
+literalmente o bug que a dedup acima corrigiu nos dados antigos; o código agora não
+reintroduz o mesmo problema pra unidade nova).
+
+**Índice único virou PARCIAL** (`where excluido_em is null`) — upgrade em relação ao antigo
+(`unique(grade_id, nome)`, sem filtro), que bloqueava reaproveitar um nome mesmo de um
+guichê já excluído. Necessário aqui porque o dedup pode deixar, no mesmo `(unidade_id, nome)`,
+uma linha excluída convivendo com a sobrevivente ativa.
 
 ## Decisões em aberto (não implementar sem confirmar)
 

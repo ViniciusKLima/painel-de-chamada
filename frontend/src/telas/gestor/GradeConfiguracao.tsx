@@ -357,6 +357,10 @@ export default function GradeConfiguracao() {
 
       <section className="cartao">
         <h3>Guichês e salas</h3>
+        <p className="dica">
+          Compartilhados com as outras grades desta mesma unidade — um guichê criado ou
+          editado aqui aparece pra quem atende qualquer serviço deste local físico.
+        </p>
         <form onSubmit={criarGuiche} className="linha" style={{ flexWrap: "wrap" }}>
           <input placeholder="Nome" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} required />
           <select value={novoTipo} onChange={(e) => setNovoTipo(e.target.value as TipoGuiche)}>

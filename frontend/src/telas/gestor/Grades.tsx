@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { Link2, RotateCcw, Settings, Trash2 } from "lucide-react";
+import { Link2, RotateCcw, Search, Settings, Trash2 } from "lucide-react";
 import { api, ApiError, type Grade } from "../../api";
 import type { ContextoGestor } from "./GestorLayout";
 import { useNotificar } from "../../componentes/Notificacoes";
+import { normalizarBusca } from "../../busca";
 
 type AbaGrade = "ativas" | "inativas" | "excluidas";
 
@@ -18,6 +19,7 @@ export default function Grades() {
   const { usuario } = useOutletContext<ContextoGestor>();
   const [grades, setGrades] = useState<Grade[]>([]);
   const [aba, setAba] = useState<AbaGrade>("ativas");
+  const [busca, setBusca] = useState("");
   const notificar = useNotificar();
   const navigate = useNavigate();
 
@@ -62,7 +64,14 @@ export default function Grades() {
   const ativas = grades.filter((g) => !g.excluida && g.ativo);
   const inativas = grades.filter((g) => !g.excluida && !g.ativo);
   const excluidas = grades.filter((g) => g.excluida);
-  const listaFiltrada = aba === "ativas" ? ativas : aba === "inativas" ? inativas : excluidas;
+  const listaDaAba = aba === "ativas" ? ativas : aba === "inativas" ? inativas : excluidas;
+
+  // Busca por serviço (16/10, pedido direto) — também casa pelo nome da grade, mesmo padrão
+  // de busca já usado na recepção/sala de espera (normaliza caixa/pontuação).
+  const alvoBusca = normalizarBusca(busca.trim());
+  const listaFiltrada = !alvoBusca
+    ? listaDaAba
+    : listaDaAba.filter((g) => normalizarBusca(g.servico).includes(alvoBusca) || normalizarBusca(g.nome).includes(alvoBusca));
 
   return (
     <div className="pagina-gestor">
@@ -78,6 +87,18 @@ export default function Grades() {
         <button className={`aba ${aba === "excluidas" ? "aba-ativa" : ""}`} onClick={() => setAba("excluidas")}>
           Excluídas ({excluidas.length})
         </button>
+      </div>
+
+      <div className="barra-busca">
+        <div className="campo-busca">
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Buscar por serviço ou nome da grade..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="tabela-cartao" style={{ marginTop: 16 }}>
@@ -118,7 +139,17 @@ export default function Grades() {
               </tr>
             ))}
             {listaFiltrada.length === 0 && (
-              <tr><td colSpan={3}>{aba === "ativas" ? "Nenhuma grade ativa — importe uma planilha pra criar automaticamente." : aba === "inativas" ? "Nenhuma grade inativa." : "Nenhuma grade excluída."}</td></tr>
+              <tr>
+                <td colSpan={3}>
+                  {alvoBusca
+                    ? "Nenhuma grade encontrada pra essa busca."
+                    : aba === "ativas"
+                      ? "Nenhuma grade ativa — importe uma planilha pra criar automaticamente."
+                      : aba === "inativas"
+                        ? "Nenhuma grade inativa."
+                        : "Nenhuma grade excluída."}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

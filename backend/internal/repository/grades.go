@@ -26,7 +26,7 @@ const colunasGradeComAlias = `
 	g.permite_encaixe_recepcao, g.ativo, g.criado_em, (g.excluido_em is not null)
 `
 
-const colunasGuiche = `id, grade_id, nome, ativo, tipo, andar, capacidade, ocupado_por_usuario_id, ocupado_em`
+const colunasGuiche = `id, unidade_id, nome, ativo, tipo, andar, capacidade, ocupado_por_usuario_id, ocupado_em`
 
 // janelaOcupacaoGuiche: um guichê sem heartbeat mais recente que isso é tratado como livre
 // de novo automaticamente nas consultas de listagem, mesmo que a coluna ainda não tenha sido
@@ -199,11 +199,20 @@ func (r *Repo) ResolverOuCriarGrade(ctx context.Context, unidadeID, servico, nom
 	if err != nil {
 		return nil, err
 	}
-	// Toda grade nova já nasce com 1 guichê (23/09, pedido explícito: "por padrão já quero
-	// que a grade venha com 1 guichê") — sem isso, o atendente alocado nela não teria nenhum
-	// guichê/sala pra escolher até o gestor lembrar de criar um manualmente.
-	if _, err := tx.Exec(ctx, `insert into guiches (grade_id, nome, ativo, tipo, capacidade) values ($1, 'Guichê 1', true, 'guiche', 1)`, g.ID); err != nil {
+	// Toda UNIDADE precisa de pelo menos 1 guichê (23/09, pedido explícito: "por padrão já
+	// quero que a grade venha com 1 guichê" — adaptado em 16/10, quando guichê voltou a
+	// pertencer à unidade: criar aqui só faz sentido se a unidade ainda não tiver nenhum,
+	// senão uma segunda grade da MESMA unidade duplicaria um "Guichê 1" que já existe e
+	// colidiria com o índice único (unidade_id, nome)). Sem isso, o atendente alocado numa
+	// unidade nova não teria nenhum guichê/sala pra escolher até o gestor criar um na mão.
+	var jaTemGuiche bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from guiches where unidade_id = $1 and excluido_em is null)`, unidadeID).Scan(&jaTemGuiche); err != nil {
 		return nil, err
+	}
+	if !jaTemGuiche {
+		if _, err := tx.Exec(ctx, `insert into guiches (unidade_id, nome, ativo, tipo, capacidade) values ($1, 'Guichê 1', true, 'guiche', 1)`, unidadeID); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -284,12 +293,12 @@ type NovoGuicheOuSala struct {
 	Capacidade int
 }
 
-func (r *Repo) CriarGuiche(ctx context.Context, gradeID string, n NovoGuicheOuSala) (*domain.Guiche, error) {
+func (r *Repo) CriarGuiche(ctx context.Context, unidadeID string, n NovoGuicheOuSala) (*domain.Guiche, error) {
 	row := r.Pool.QueryRow(ctx, `
-		insert into guiches (grade_id, nome, ativo, tipo, andar, capacidade)
+		insert into guiches (unidade_id, nome, ativo, tipo, andar, capacidade)
 		values ($1, $2, true, $3, $4, $5)
 		returning `+colunasGuiche,
-		gradeID, strings.TrimSpace(n.Nome), n.Tipo, n.Andar, n.Capacidade)
+		unidadeID, strings.TrimSpace(n.Nome), n.Tipo, n.Andar, n.Capacidade)
 	var g domain.Guiche
 	if err := escanearLinhaGuiche(row, &g); err != nil {
 		return nil, err
@@ -299,10 +308,10 @@ func (r *Repo) CriarGuiche(ctx context.Context, gradeID string, n NovoGuicheOuSa
 
 // AtualizarAtivoGuiche liga/desliga um guichê — não existe exclusão de verdade, um guichê
 // com chamadas no histórico não pode sumir da tabela `chamadas` (integridade referencial).
-func (r *Repo) AtualizarAtivoGuiche(ctx context.Context, gradeID, guicheID string, ativo bool) (int64, error) {
+func (r *Repo) AtualizarAtivoGuiche(ctx context.Context, unidadeID, guicheID string, ativo bool) (int64, error) {
 	tag, err := r.Pool.Exec(ctx, `
-		update guiches set ativo = $3 where id = $1 and grade_id = $2
-	`, guicheID, gradeID, ativo)
+		update guiches set ativo = $3 where id = $1 and unidade_id = $2
+	`, guicheID, unidadeID, ativo)
 	if err != nil {
 		return 0, err
 	}
@@ -319,12 +328,12 @@ type AtualizacaoGuiche struct {
 
 // AtualizarGuiche grava a edição completa do bloco (nome, tipo guichê/sala, andar,
 // capacidade, ativo) feita pelo gestor na tela de configurações da grade.
-func (r *Repo) AtualizarGuiche(ctx context.Context, gradeID, guicheID string, a AtualizacaoGuiche) (*domain.Guiche, error) {
+func (r *Repo) AtualizarGuiche(ctx context.Context, unidadeID, guicheID string, a AtualizacaoGuiche) (*domain.Guiche, error) {
 	row := r.Pool.QueryRow(ctx, `
 		update guiches set nome = $3, tipo = $4, andar = $5, capacidade = $6, ativo = $7
-		where id = $1 and grade_id = $2
+		where id = $1 and unidade_id = $2
 		returning `+colunasGuiche,
-		guicheID, gradeID, strings.TrimSpace(a.Nome), a.Tipo, a.Andar, a.Capacidade, a.Ativo)
+		guicheID, unidadeID, strings.TrimSpace(a.Nome), a.Tipo, a.Andar, a.Capacidade, a.Ativo)
 	var g domain.Guiche
 	if err := escanearLinhaGuiche(row, &g); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -344,18 +353,18 @@ var ErrGuicheOcupado = errors.New("guiche ocupado por outro atendente")
 // ou se o heartbeat anterior estiver velho demais (`janelaOcupacaoGuiche` — dono anterior
 // sumiu sem liberar). Falha com ErrGuicheOcupado se outro atendente está lá agora de
 // verdade.
-func (r *Repo) OcuparGuiche(ctx context.Context, gradeID, guicheID, usuarioID string) (*domain.Guiche, error) {
+func (r *Repo) OcuparGuiche(ctx context.Context, unidadeID, guicheID, usuarioID string) (*domain.Guiche, error) {
 	row := r.Pool.QueryRow(ctx, `
 		update guiches
 		set ocupado_por_usuario_id = $3, ocupado_em = now()
-		where id = $1 and grade_id = $2
+		where id = $1 and unidade_id = $2
 		  and (ocupado_por_usuario_id is null or ocupado_por_usuario_id = $3 or ocupado_em < now() - `+janelaOcupacaoGuiche+`)
 		returning `+colunasGuiche,
-		guicheID, gradeID, usuarioID)
+		guicheID, unidadeID, usuarioID)
 	var g domain.Guiche
 	err := escanearLinhaGuiche(row, &g)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if _, errBusca := r.BuscarGuichePorID(ctx, gradeID, guicheID); errBusca != nil {
+		if _, errBusca := r.BuscarGuichePorID(ctx, unidadeID, guicheID); errBusca != nil {
 			return nil, ErrNaoEncontrado
 		}
 		return nil, ErrGuicheOcupado
@@ -368,18 +377,18 @@ func (r *Repo) OcuparGuiche(ctx context.Context, gradeID, guicheID, usuarioID st
 
 // LiberarGuiche solta o guichê explicitamente (botão "Sair"/trocar de guichê) — só o próprio
 // dono libera; alguém tentando liberar o guichê de outra pessoa é um no-op silencioso.
-func (r *Repo) LiberarGuiche(ctx context.Context, gradeID, guicheID, usuarioID string) error {
+func (r *Repo) LiberarGuiche(ctx context.Context, unidadeID, guicheID, usuarioID string) error {
 	_, err := r.Pool.Exec(ctx, `
 		update guiches set ocupado_por_usuario_id = null, ocupado_em = null
-		where id = $1 and grade_id = $2 and ocupado_por_usuario_id = $3
-	`, guicheID, gradeID, usuarioID)
+		where id = $1 and unidade_id = $2 and ocupado_por_usuario_id = $3
+	`, guicheID, unidadeID, usuarioID)
 	return err
 }
 
 func escanearLinhaGuiche(row interface {
 	Scan(dest ...any) error
 }, g *domain.Guiche) error {
-	return row.Scan(&g.ID, &g.GradeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade, &g.OcupadoPorUsuarioID, &g.OcupadoEm)
+	return row.Scan(&g.ID, &g.UnidadeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade, &g.OcupadoPorUsuarioID, &g.OcupadoEm)
 }
 
 // colunasGuicheComOcupacao é usada só nas listagens (não em insert/update returning): junta
@@ -390,7 +399,7 @@ func escanearLinhaGuiche(row interface {
 func escanearLinhaGuicheComOcupacao(row interface {
 	Scan(dest ...any) error
 }, g *domain.Guiche) error {
-	return row.Scan(&g.ID, &g.GradeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade,
+	return row.Scan(&g.ID, &g.UnidadeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade,
 		&g.OcupadoPorUsuarioID, &g.OcupadoEm, &g.OcupadoPorNome)
 }
 
@@ -399,12 +408,12 @@ func escanearLinhaGuicheComOcupacao(row interface {
 func escanearLinhaGuicheComOcupacaoEExclusao(row interface {
 	Scan(dest ...any) error
 }, g *domain.Guiche) error {
-	return row.Scan(&g.ID, &g.GradeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade,
+	return row.Scan(&g.ID, &g.UnidadeID, &g.Nome, &g.Ativo, &g.Tipo, &g.Andar, &g.Capacidade,
 		&g.OcupadoPorUsuarioID, &g.OcupadoEm, &g.OcupadoPorNome, &g.Excluida)
 }
 
 const selectGuichesComOcupacao = `
-	select g.id, g.grade_id, g.nome, g.ativo, g.tipo, g.andar, g.capacidade,
+	select g.id, g.unidade_id, g.nome, g.ativo, g.tipo, g.andar, g.capacidade,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then g.ocupado_por_usuario_id end,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then g.ocupado_em end,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then u.nome end
@@ -419,7 +428,7 @@ const selectGuichesComOcupacao = `
 // reativar) — todo outro consumidor de guichê continua filtrando excluídos, ver nota em
 // `ListarGradesPorSecretaria` sobre o mesmo princípio pra grades.
 const selectGuichesComOcupacaoIncluindoExcluidos = `
-	select g.id, g.grade_id, g.nome, g.ativo, g.tipo, g.andar, g.capacidade,
+	select g.id, g.unidade_id, g.nome, g.ativo, g.tipo, g.andar, g.capacidade,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then g.ocupado_por_usuario_id end,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then g.ocupado_em end,
 		case when g.ocupado_em > now() - ` + janelaOcupacaoGuiche + ` then u.nome end,
@@ -429,18 +438,19 @@ const selectGuichesComOcupacaoIncluindoExcluidos = `
 	where true
 `
 
-func (r *Repo) ListarGuichesAtivos(ctx context.Context, gradeID string) ([]domain.Guiche, error) {
-	return r.ListarGuichesAtivosPorGrades(ctx, []string{gradeID})
+// ListarGuichesAtivos — guichês de UMA unidade (local físico, ver nota em domain.Guiche).
+func (r *Repo) ListarGuichesAtivos(ctx context.Context, unidadeID string) ([]domain.Guiche, error) {
+	return r.ListarGuichesAtivosPorUnidades(ctx, []string{unidadeID})
 }
 
-// ListarGuichesAtivosPorGrades (23/09) — consolidado pra várias grades numa passada só, ver
-// nota em ListarSalaEsperaPorGrades. Cada guichê continua pertencendo a UMA grade só (não
-// existe "guichê compartilhado entre grades") — isso só evita N requisições separadas
-// quando o atendente tem N grades.
-func (r *Repo) ListarGuichesAtivosPorGrades(ctx context.Context, gradeIDs []string) ([]domain.Guiche, error) {
+// ListarGuichesAtivosPorUnidades (16/10, era ...PorGrades até guichê voltar a pertencer à
+// unidade) — consolidado pra várias unidades numa passada só, ver nota em
+// ListarSalaEsperaPorGrades. Recebe uma lista de unidadeIDs já DEDUPLICADA pelo chamador (um
+// atendente com 2 grades na mesma unidade não deve gerar guichê duplicado na resposta).
+func (r *Repo) ListarGuichesAtivosPorUnidades(ctx context.Context, unidadeIDs []string) ([]domain.Guiche, error) {
 	rows, err := r.Pool.Query(ctx, selectGuichesComOcupacao+`
-		and g.grade_id = any($1) and g.ativo = true order by g.nome
-	`, gradeIDs)
+		and g.unidade_id = any($1) and g.ativo = true order by g.nome
+	`, unidadeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -460,10 +470,10 @@ func (r *Repo) ListarGuichesAtivosPorGrades(ctx context.Context, gradeIDs []stri
 // ListarTodosGuiches inclui os inativos E os excluídos (23/09) — a listagem pra atendente usa
 // ListarGuichesAtivos; esta é pra tela do gestor, que precisa poder ligar/desligar um guichê
 // (`ativo`) E reativar um excluído (`excluido_em`).
-func (r *Repo) ListarTodosGuiches(ctx context.Context, gradeID string) ([]domain.Guiche, error) {
+func (r *Repo) ListarTodosGuiches(ctx context.Context, unidadeID string) ([]domain.Guiche, error) {
 	rows, err := r.Pool.Query(ctx, selectGuichesComOcupacaoIncluindoExcluidos+`
-		and g.grade_id = $1 order by g.nome
-	`, gradeID)
+		and g.unidade_id = $1 order by g.nome
+	`, unidadeID)
 	if err != nil {
 		return nil, err
 	}
@@ -480,25 +490,26 @@ func (r *Repo) ListarTodosGuiches(ctx context.Context, gradeID string) ([]domain
 	return guiches, rows.Err()
 }
 
-var ErrUltimoGuiche = errors.New("grade precisa de pelo menos um guiche ou sala")
+var ErrUltimoGuiche = errors.New("unidade precisa de pelo menos um guiche ou sala")
 
 // ExcluirGuiche (23/09) — soft-delete, mesma lógica de ExcluirGrade. Bloqueado (ErrUltimoGuiche)
-// se for o único guichê/sala não-excluído da grade — pedido explícito: "é obrigatório ter
-// pelo menos 1 guichê ou sala". A checagem de contagem e o update acontecem na MESMA query
-// (atômico) pra não ter condição de corrida entre "contar quantos existem" e "excluir".
-func (r *Repo) ExcluirGuiche(ctx context.Context, gradeID, guicheID string) error {
+// se for o único guichê/sala não-excluído da UNIDADE (16/10, era da grade) — pedido
+// explícito: "é obrigatório ter pelo menos 1 guichê ou sala". A checagem de contagem e o
+// update acontecem na MESMA query (atômico) pra não ter condição de corrida entre "contar
+// quantos existem" e "excluir".
+func (r *Repo) ExcluirGuiche(ctx context.Context, unidadeID, guicheID string) error {
 	tag, err := r.Pool.Exec(ctx, `
 		update guiches set excluido_em = now()
-		where id = $1 and grade_id = $2 and excluido_em is null
-		  and (select count(*) from guiches where grade_id = $2 and excluido_em is null) > 1
-	`, guicheID, gradeID)
+		where id = $1 and unidade_id = $2 and excluido_em is null
+		  and (select count(*) from guiches where unidade_id = $2 and excluido_em is null) > 1
+	`, guicheID, unidadeID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() > 0 {
 		return nil
 	}
-	if _, err := r.BuscarGuichePorID(ctx, gradeID, guicheID); err != nil {
+	if _, err := r.BuscarGuichePorID(ctx, unidadeID, guicheID); err != nil {
 		return err
 	}
 	return ErrUltimoGuiche
@@ -508,10 +519,10 @@ func (r *Repo) ExcluirGuiche(ctx context.Context, gradeID, guicheID string) erro
 // `ativo` do jeito que estava antes de ser excluído (a exclusão não mexe em `ativo`, só em
 // `excluido_em`) — se o gestor tinha desativado o guichê antes de excluir, ele volta
 // desativado; precisa ligar separadamente se quiser usá-lo de novo.
-func (r *Repo) ReativarGuiche(ctx context.Context, gradeID, guicheID string) (*domain.Guiche, error) {
+func (r *Repo) ReativarGuiche(ctx context.Context, unidadeID, guicheID string) (*domain.Guiche, error) {
 	row := r.Pool.QueryRow(ctx, `
-		update guiches set excluido_em = null where id = $1 and grade_id = $2
-		returning `+colunasGuiche, guicheID, gradeID)
+		update guiches set excluido_em = null where id = $1 and unidade_id = $2
+		returning `+colunasGuiche, guicheID, unidadeID)
 	var g domain.Guiche
 	err := escanearLinhaGuiche(row, &g)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -523,10 +534,10 @@ func (r *Repo) ReativarGuiche(ctx context.Context, gradeID, guicheID string) (*d
 	return &g, nil
 }
 
-func (r *Repo) BuscarGuichePorID(ctx context.Context, gradeID, guicheID string) (*domain.Guiche, error) {
+func (r *Repo) BuscarGuichePorID(ctx context.Context, unidadeID, guicheID string) (*domain.Guiche, error) {
 	row := r.Pool.QueryRow(ctx, `
-		select `+colunasGuiche+` from guiches where id = $1 and grade_id = $2
-	`, guicheID, gradeID)
+		select `+colunasGuiche+` from guiches where id = $1 and unidade_id = $2
+	`, guicheID, unidadeID)
 	var g domain.Guiche
 	err := escanearLinhaGuiche(row, &g)
 	if errors.Is(err, pgx.ErrNoRows) {

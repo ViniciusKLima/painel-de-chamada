@@ -118,22 +118,63 @@ nunca podem pegar o mesmo agendamento. Implementar com `SELECT ... FOR UPDATE SK
 equivalente) dentro de uma transaction ao buscar o próximo da sala de espera — não confiar em
 checar-e-atualizar em dois passos separados.
 
-## Ocupação de guichê em tempo real (22/09)
+## Guichê é por UNIDADE, não por grade (16/10 — reversão de uma decisão de 22/09)
 
-Pedido do dono do produto: se são 3 guichês/salas numa grade e um atendente escolhe o 2, os
-outros atendentes que forem escolher guichê depois só devem ver o 1 e o 3 livres — o 2
-precisa aparecer ocupado. Antes disso, a escolha de guichê só era lembrada em `localStorage`
-(local a cada navegador, sem visibilidade entre atendentes) — dois atendentes diferentes
-podiam escolher o mesmo guichê sem que nenhum soubesse do outro.
+**Mudança de modelo de dados e de regra de negócio**, pedido direto do dono do produto: "não
+deve ter opção de escolher guichê pra cada grade que estiver alocado. não faz sentido a
+pessoa estar em dois guichês diferentes, a pessoa só escolhe um e já serve pra todos, pq ali
+é o lugar que ela vai atender as demandas". Fisicamente um guichê é uma mesa/sala dentro de
+um LOCAL físico (unidade), não de um serviço específico dentro dele — entre 22/09 e 16/10 o
+schema tinha `guiches.grade_id` (cada grade com seu próprio conjunto, inclusive duplicando
+"Guichê 1" entre a grade principal e a de encaixe do mesmo local), o que forçava o atendente
+a escolher um guichê separado PRA CADA grade alocada, mesmo quando todas eram do mesmo prédio.
+
+**Como ficou**: `guiches.unidade_id` (voltou a ser como era antes de 22/09) — um atendente
+escolhe UM guichê por UNIDADE física (não por grade), e essa escolha vale automaticamente
+pra todas as grades dele naquela unidade. Só precisa escolher mais de um guichê se tiver
+grades em unidades físicas DIFERENTES (ex. atendente alocado em dois CRAS distintos) — nesse
+caso cada local físico continua exigindo sua própria escolha, porque fisicamente a pessoa não
+pode estar em dois prédios ao mesmo tempo.
+
+Migration `000010_guiche_por_unidade` fez o merge de dado real: duas grades da mesma unidade
+que já tinham, cada uma, seu próprio "Guichê 1" (nomes duplicados, IDs diferentes) foram
+unificadas numa linha só (mantida a de mais histórico), com as referências em
+`agendamentos`/`chamadas` repontadas — nenhum histórico foi perdido, só passou a apontar pro
+guichê físico único que já representava de fato.
+
+**Reflexo na UI do atendente** (`SalaDeEspera.tsx`): o botão "Selecionar guichê" saiu de
+dentro de cada bloco de grade (`.grupo-grade`) e subiu pro cabeçalho do grupo de UNIDADE
+(`.grupo-unidade`) — aparece uma vez por unidade, nunca mais uma vez por grade. O modal de
+seleção mostra o nome da unidade (não mais "unidade — grade"), e a lista de guichês já vem
+consolidada (sem duplicata) da unidade inteira.
+
+**Reflexo na tela do gestor** (`GradeConfiguracao.tsx`, seção "Guichês e salas"): continua
+acessível a partir da página de configuração de QUALQUER grade (não ganhou uma tela nova),
+mas agora edita a lista da UNIDADE daquela grade — criar/editar/excluir um guichê ali afeta
+todas as outras grades do mesmo local físico também. Tem uma nota (`.dica`) explicando isso
+na tela, pra não confundir o gestor que só está olhando uma grade específica.
+
+Pedido do dono do produto (22/09, ainda válido): se são 3 guichês/salas numa unidade e um
+atendente escolhe o 2, os outros atendentes que forem escolher guichê depois só devem ver o
+1 e o 3 livres — o 2 precisa aparecer ocupado. Antes do heartbeat (abaixo), a escolha de
+guichê só era lembrada em `localStorage` (local a cada navegador, sem visibilidade entre
+atendentes) — dois atendentes diferentes podiam escolher o mesmo guichê sem que nenhum
+soubesse do outro.
 
 **Mecanismo — heartbeat, não uma trava permanente**: escolher um guichê no modal chama
-`POST /grades/{gradeId}/guiches/{guicheId}/ocupar`, que grava `ocupado_por_usuario_id` +
-`ocupado_em = now()`. Enquanto o atendente continua ali, o frontend **reafirma a ocupação a
-cada 5s** (mesmo endpoint, idempotente pro próprio dono). Um guichê só aparece "ocupado" pros
-outros enquanto o heartbeat estiver **fresco** (`ocupado_em` dentro dos últimos 15s, ver
-`janelaOcupacaoGuiche` em `internal/repository/grades.go`) — depois disso, mesmo sem nenhuma
-ação explícita, ele volta a aparecer livre sozinho. Isso cobre o caso de aba fechada/crash
-sem logout, sem precisar de nenhuma limpeza manual ou job de background.
+`POST /grades/{gradeId}/guiches/{guicheId}/ocupar` — a rota continua "por grade" na URL (é
+dali que o atendente está chamando no momento, e `exigirGrade` já valida o acesso dele), mas
+o que o backend grava é a ocupação do guichê da UNIDADE daquela grade (`grade.UnidadeID`,
+não `grade.ID`) — por isso ocupar através de QUALQUER grade de uma unidade já marca o guichê
+ocupado pras outras grades dela também, sem escolher de novo. Grava
+`ocupado_por_usuario_id` + `ocupado_em = now()`. Enquanto o atendente continua ali, o
+frontend **reafirma a ocupação a cada 5s** (mesmo endpoint, idempotente pro próprio dono,
+escolhendo qualquer grade representativa daquela unidade pra montar a URL). Um guichê só
+aparece "ocupado" pros outros enquanto o heartbeat estiver **fresco** (`ocupado_em` dentro
+dos últimos 15s, ver `janelaOcupacaoGuiche` em `internal/repository/grades.go`) — depois
+disso, mesmo sem nenhuma ação explícita, ele volta a aparecer livre sozinho. Isso cobre o
+caso de aba fechada/crash sem logout, sem precisar de nenhuma limpeza manual ou job de
+background.
 
 **Liberação explícita**: clicar "Sair" chama `POST .../liberar` antes de encerrar a sessão,
 soltando o guichê na hora (não espera os até 15s da janela). Trocar de guichê (botão no
@@ -147,7 +188,7 @@ na hora pra refletir o estado real.
 
 **Escopo desta regra**: é sobre a ESCOLHA do guichê no modal (evitar dois atendentes
 escolhendo o mesmo ao mesmo tempo), não uma trava adicional sobre `chamar-próximo` — esse
-endpoint continua aceitando qualquer `guicheId` da grade, sem verificar se é o guichê
+endpoint continua aceitando qualquer `guicheId` da unidade, sem verificar se é o guichê
 "ocupado" por quem está chamando. Documentando aqui pra não presumir uma trava mais rígida
 que não foi pedida nem implementada.
 

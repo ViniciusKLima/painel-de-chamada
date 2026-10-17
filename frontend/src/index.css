@@ -1,39 +1,64 @@
 /* Identidade visual do Painel de Chamada — ver skill `.claude/skills/identidade-visual`
    pra decisões de design (paleta, tipografia, escala de espaçamento) e a razão de cada
-   uma. Não escolher cor/fonte/medida nova sem checar a skill primeiro. */
+   uma. Não escolher cor/fonte/medida nova sem checar a skill primeiro.
+
+   Reestruturado em 24/09 pra seguir o design system real do Conecta Cidades (empresa por
+   trás do produto, documentado num artifact externo analisado na mesma rodada) — fonte,
+   paleta semântica e raio de borda abaixo vêm de lá, não mais da identidade "fugir de cara
+   de IA" da reforma de 21/09 (ver skill pra detalhe completo da migração e do porquê). */
 :root {
   color-scheme: light;
-  --fonte-base: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --fonte-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --fonte-base: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Raio de borda — família de 3 tamanhos, do design system do Conecta Cidades (painel
+     administrativo): 7px pra botão/input/elemento pequeno, 10px pra cartão, 16px pra
+     modal/overlay. Pílula (999px, usada direto nos seletores de chip/pill) continua
+     permitida — a proibição deles é só pra botão de FORMULÁRIO totalmente arredondado. */
+  --raio-pequeno: 7px;
+  --raio-cartao: 10px;
+  --raio-modal: 16px;
 
   /* Superfícies */
   --cor-fundo: #f2f1ec;
   --cor-superficie: #ffffff;
-  --cor-texto: #182428;
-  --cor-texto-suave: #5c6d70;
+  --cor-texto: #444444;
+  --cor-texto-suave: #6b6b6b;
   --cor-borda: #dce3e0;
 
-  /* Marca — cabeçalho e elementos de identidade (não usar em botão/texto de conteúdo) */
+  /* Marca — cabeçalho e elementos de identidade (não usar em botão/texto de conteúdo).
+     Fundo chapado (sem degradê, ver `.cabecalho`/`.gestor-sidebar`) — "o produto usa cor
+     chapada", proibição explícita do design system do Conecta Cidades. */
   --cor-marca: #0e2e38;
-  --cor-marca-clara: #164a58;
   --cor-marca-texto: #eaf3f2;
   --cor-marca-texto-suave: rgba(234, 243, 242, 0.72);
 
-  /* Ação — botões primários, links, foco */
-  --cor-primaria: #146c8c;
-  --cor-primaria-forte: #0f5670;
+  /* Ação — botões primários, links, foco. Valor exato do design system do Conecta Cidades
+     (`#D52E5F` — "cada prefeitura tem a sua cor", esse é o valor canônico usado nos mockups
+     antes de qualquer tema aplicado) — passa contraste AA tanto como texto sobre fundo claro
+     quanto como texto branco sobre o próprio fundo (~4.8:1 nos dois sentidos, verificado),
+     então não precisou de ajuste. Continua sobrescrito em runtime por prefeitura via
+     `aplicarTemaPrefeitura` (`tema.ts`), igual já funcionava. */
+  --cor-primaria: #d52e5f;
+  --cor-primaria-forte: #af264e;
 
-  /* Semânticas de status, cada uma com par texto/fundo pra chip e aviso */
-  --cor-sucesso: #2f8f5b;
-  --cor-sucesso-fundo: #e3f3ea;
-  --cor-erro: #b3261e;
-  --cor-erro-fundo: #fbe7e5;
-  --cor-aviso: #a1660a;
-  --cor-aviso-fundo: #fbeeda;
-  --cor-info: #146c8c;
-  --cor-info-fundo: #e4f1f5;
+  /* Semânticas de status — hue de cada uma vem do design system do Conecta Cidades (sucesso
+     `#32c787`, erro `#ff6b68`, alerta `#ffc721`), mas os 3 valores ORIGINAIS deles, testados,
+     falham contraste AA (< 3:1) tanto como texto sobre fundo claro quanto como texto branco
+     sobre o próprio tom — são claros/vivos demais pra carregar texto pequeno (chip, valor de
+     estatística). O token abaixo é a mesma família de cor escurecida até passar ~4.5:1+
+     (verificado: sucesso 4.83:1, erro 5.54:1, alerta 5.24:1) — o tom exato deles sobrevive só
+     no "fundo" claro (abaixo), onde não carrega texto por cima, então a cor real da marca
+     continua visível em todo chip/aviso, só o texto em si é que precisou escurecer. */
+  --cor-sucesso: #218158;
+  --cor-sucesso-fundo: rgba(50, 199, 135, 0.12);
+  --cor-erro: #b3433f;
+  --cor-erro-fundo: rgba(255, 107, 104, 0.12);
+  --cor-aviso: #946200;
+  --cor-aviso-fundo: rgba(255, 199, 33, 0.16);
+  --cor-info: var(--cor-primaria);
+  --cor-info-fundo: rgba(213, 46, 95, 0.12);
   --cor-encaixe: #5b3aa6;
-  --cor-encaixe-fundo: #ece6fa;
+  --cor-encaixe-fundo: rgba(91, 58, 166, 0.12);
 
   /* Hover neutro e suave (22/09) — só pra indicar "isso aqui é clicável/está em foco",
      nunca pra chamar atenção. Reclamação direta do dono do produto: hover de linha de
@@ -47,6 +72,22 @@
   --espaco-4: 16px;
   --espaco-5: 24px;
   --espaco-6: 32px;
+
+  /* Escala de tamanho de fonte (16/10) — pedido explícito do dono do produto: "achando muito
+     grande as fontes", quis variável por tipo pra testar e ajustar sem precisar caçar valor
+     espalhado pelo CSS. Mexer SÓ aqui pra testar um tamanho novo — nunca num seletor
+     específico, senão perde o ponto de ter a variável. Cobre os 2 tipos citados (conteúdo de
+     tabela e título acima dela) + o resto da escala de texto, já que Montserrat lê mais
+     "cheia"/maior que a fonte anterior (Public Sans) no mesmo valor em rem — o `td` e o `h1`/
+     `h2` soltos nunca tinham tido um tamanho explícito (caíam no padrão do navegador, ~16px
+     pro texto de tabela e ~32px/24px pros títulos), o que ficava bem maior do que o resto da
+     interface, que sempre usou valores pequenos (0.72-0.95rem). */
+  --fonte-tamanho-titulo-pagina: 1.5rem;     /* h1 solto — "Dashboard", "Usuários internos" */
+  --fonte-tamanho-titulo-secao: 1.05rem;     /* h2 — título de bloco/seção, geralmente em cima de uma tabela ou lista ("Pendentes", "Sala de espera") */
+  --fonte-tamanho-titulo-cartao: 0.95rem;    /* h3 dentro de .cartao — título de bloco de configuração (SLA, guichês) */
+  --fonte-tamanho-corpo: 0.95rem;            /* texto padrão de botão/input/parágrafo */
+  --fonte-tamanho-tabela: 0.85rem;           /* conteúdo das células (<td>) */
+  --fonte-tamanho-tabela-cabecalho: 0.72rem; /* cabeçalho de coluna (<th>), caixa alta */
 }
 
 * {
@@ -80,10 +121,15 @@ h1, h2, h3 {
   margin: 0 0 var(--espaco-2);
 }
 
-/* Números tabulares numa fonte monoespaçada (protocolo, horário, contadores) — detalhe de
-   identidade "civic-tech": alinha em coluna e diferencia dado numérico de texto comum. */
+h1 { font-size: var(--fonte-tamanho-titulo-pagina); }
+h2 { font-size: var(--fonte-tamanho-titulo-secao); }
+h3 { font-size: var(--fonte-tamanho-titulo-cartao); }
+
+/* Números tabulares (protocolo, horário, contadores) — Montserrat tem algarismo tabular
+   disponível, então não precisa mais de uma fonte monoespaçada separada só pra isso (o
+   design system do Conecta Cidades usa uma família só, Montserrat, em toda a interface —
+   24/09, substituiu o par Public Sans + IBM Plex Mono da reforma de 21/09). */
 .numerico {
-  font-family: var(--fonte-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -98,7 +144,7 @@ h1, h2, h3 {
 .cartao {
   background: var(--cor-superficie);
   border: 1px solid var(--cor-borda);
-  border-radius: 12px;
+  border-radius: var(--raio-cartao);
   box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04), 0 8px 24px rgba(14, 46, 56, 0.05);
   padding: var(--espaco-5) var(--espaco-5);
   margin-bottom: var(--espaco-4);
@@ -114,12 +160,9 @@ h1, h2, h3 {
   margin-top: 0;
 }
 
-.cartao h2 {
-  font-size: 1.1rem;
-}
-
+/* Tamanho vem do seletor global h3 (var(--fonte-tamanho-titulo-cartao)) — só a cor é
+   específica de dentro do cartão. */
 .cartao h3 {
-  font-size: 0.98rem;
   color: var(--cor-texto);
 }
 
@@ -133,7 +176,7 @@ h1, h2, h3 {
   color: var(--cor-primaria-forte);
   background: var(--cor-info-fundo);
   padding: var(--espaco-2) var(--espaco-3);
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
 }
 
 /* Texto de apoio discreto (22/09) — pra esclarecer um termo/regra de negócio genuinamente
@@ -174,7 +217,7 @@ h1, h2, h3 {
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: var(--raio-cartao);
   background: var(--cor-superficie);
   box-shadow: 0 6px 20px rgba(14, 46, 56, 0.18);
   border-left: 4px solid var(--cor-sucesso);
@@ -242,9 +285,9 @@ input,
 select,
 button {
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: var(--fonte-tamanho-corpo);
   padding: 9px 14px;
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   border: 1px solid var(--cor-borda);
   color: var(--cor-texto);
   max-width: 100%;
@@ -340,7 +383,10 @@ form.cartao button {
   gap: var(--espaco-4);
   width: 100%;
   padding: var(--espaco-3) var(--espaco-5);
-  background: linear-gradient(160deg, var(--cor-marca-clara), var(--cor-marca));
+  /* Fundo chapado, nunca degradê (24/09, alinhamento com o design system do Conecta
+     Cidades: "o produto usa cor chapada", proibição explícita de gradiente no fundo —
+     era `linear-gradient(160deg, --cor-marca-clara, --cor-marca)` antes). */
+  background: var(--cor-marca);
   color: var(--cor-marca-texto);
 }
 
@@ -492,7 +538,7 @@ th {
   padding: 10px 12px;
   background: var(--cor-info-fundo);
   color: var(--cor-marca);
-  font-size: 0.78rem;
+  font-size: var(--fonte-tamanho-tabela-cabecalho);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-weight: 700;
@@ -500,16 +546,17 @@ th {
 }
 
 th:first-child {
-  border-top-left-radius: 8px;
+  border-top-left-radius: var(--raio-cartao);
 }
 
 th:last-child {
-  border-top-right-radius: 8px;
+  border-top-right-radius: var(--raio-cartao);
 }
 
 td {
   text-align: left;
   padding: 12px;
+  font-size: var(--fonte-tamanho-tabela);
   border-bottom: 1px solid var(--cor-borda);
 }
 
@@ -650,7 +697,10 @@ tbody tr:hover {
   overflow: hidden;
   background: var(--painel-card);
   border: 1px solid var(--painel-borda);
-  border-radius: 24px;
+  /* 24/09: raio alinhado ao "modal" do design system do Conecta Cidades (16px, maior
+     raio que eles definem) — o painel de TV é a tela pública, equivalente ao "site do
+     cidadão" deles, não ao "painel administrativo" interno (que usa a família 7/10px). */
+  border-radius: var(--raio-modal);
   box-shadow: var(--painel-sombra);
   text-align: center;
   min-width: 0;
@@ -679,7 +729,6 @@ tbody tr:hover {
 }
 
 .chamada-atual-protocolo {
-  font-family: var(--fonte-mono);
   font-size: clamp(1.3rem, 3.2vw, 2.1rem);
   font-weight: 700;
   color: var(--painel-acento);
@@ -751,7 +800,7 @@ tbody tr:hover {
   justify-content: center;
   gap: 8px;
   padding: clamp(14px, 1.8vw, 28px);
-  border-radius: 24px;
+  border-radius: var(--raio-modal);
   /* Cartão branco independente (23/09), mesmo tratamento visual de .chamada-atual/.historico
      — não é mais um tile colorido dentro de um cartão maior. */
   background: var(--painel-card);
@@ -815,7 +864,7 @@ tbody tr:hover {
   min-width: 0;
   background: var(--painel-card);
   border: 1px solid var(--painel-borda);
-  border-radius: 24px;
+  border-radius: var(--raio-modal);
   box-shadow: var(--painel-sombra);
   padding: clamp(14px, 1.8vw, 26px);
   box-sizing: border-box;
@@ -909,7 +958,6 @@ tbody tr:hover {
 /* Protocolo maior e com peso (22/09, pedido: "número do protocolo maior") — usa a cor de
    destaque, mesma lógica da chamada em evidência, pra ficar reconhecível de longe. */
 .historico-protocolo {
-  font-family: var(--fonte-mono);
   font-size: 1.05em;
   font-weight: 700;
   color: var(--painel-acento);
@@ -1057,14 +1105,16 @@ tbody tr:hover {
   padding-bottom: 4px;
 }
 
+/* Sem moldura (16/10, pedido direto: "não quero essa borda e esse espaçamento... deixe com
+   a largura normal") — era um bloco com borda/fundo/padding em volta de cada grade, o que
+   empurrava a tabela pra dentro e fazia parecer menor/mais estreita que o resto da página.
+   Agora é só espaçamento vertical entre o cabeçalho da grade e a tabela dela, direto sobre o
+   fundo da página — mesmo padrão de "bloco sem cartão, só a tabela tem `.tabela-cartao`" já
+   usado no resto da tela do atendente. */
 .grupo-grade {
   display: flex;
   flex-direction: column;
   gap: var(--espaco-2);
-  padding: var(--espaco-3);
-  border: 1px solid var(--cor-borda);
-  border-radius: 12px;
-  background: var(--cor-fundo);
 }
 
 .grupo-grade-cabecalho {
@@ -1119,7 +1169,7 @@ tbody tr:hover {
 .tabela-cartao {
   background: var(--cor-superficie);
   border: 1px solid var(--cor-borda);
-  border-radius: 12px;
+  border-radius: var(--raio-cartao);
   box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04), 0 8px 24px rgba(14, 46, 56, 0.05);
   overflow-x: auto;
   /* Barra de rolagem fina (23/09) — reclamação real: em alguns monitores/zooms, um
@@ -1165,37 +1215,64 @@ tbody tr:hover {
   text-align: right;
 }
 
+/* Botão de ícone — discreto desde 16/10 (pedido direto: "tão muito grande e não precisa do
+   background, tá feio assim") — era 38px com fundo sólido na cor de ação (herdava o
+   `button { background: var(--cor-primaria) }` global), ficava um quadrado colorido grande
+   demais pra uma ação dentro de uma linha de tabela. Agora é "ghost": sem fundo, sem borda,
+   só o ícone colorido, com um fundo tênue (`--cor-hover`) só no hover — mesmo princípio já
+   usado em `.linha-guiche-resumo`/`.quadro-guiche` (indicar "clicável", nunca chamar atenção
+   sozinho). Precisa do `:not(:disabled)` em cada variante pra vencer a especificidade do
+   `button:not(:disabled):hover` global — ver a nota da "armadilha de especificidade" abaixo. */
 .botao-icone {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   flex-shrink: 0;
+  background: transparent;
+  color: var(--cor-texto-suave);
+  border: none;
+}
+
+.botao-icone:not(:disabled):hover {
+  background: var(--cor-hover);
+  color: var(--cor-primaria);
 }
 
 .botao-icone-sucesso {
-  background: var(--cor-sucesso);
+  background: transparent;
+  color: var(--cor-sucesso);
+}
+
+.botao-icone-sucesso:not(:disabled):hover {
+  background: var(--cor-sucesso-fundo);
+  color: var(--cor-sucesso);
 }
 
 /* Ausência manual (23/09) — mesmo padrão do botão de sucesso, cor de perigo/erro. */
 .botao-icone-perigo {
-  background: var(--cor-erro);
+  background: transparent;
+  color: var(--cor-erro);
+}
+
+.botao-icone-perigo:not(:disabled):hover {
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro);
 }
 
 /* Botão-ícone secundário (23/09) — pra ações utilitárias que não mudam dado nenhum (copiar
-   link, por ex.), distinto visualmente das ações primárias reais (confirmar chegada, marcar
-   presente, configurações...) que continuam sólidas na cor de ação. Contorno em vez de fundo
-   sólido ou fundo tintado — as duas outras opções soariam repetitivas com o resto da UI
-   (fundo tintado já é o padrão de `.chip`/`.aviso`/hover de linha). Precisa do `:not(:disabled)`
-   pra vencer a especificidade do `button:not(:disabled):hover` global — ver nota ao lado dele. */
+   link, por ex.). Desde 16/10 usa o mesmo tratamento ghost da base (`.botao-icone`) — a borda
+   que o distinguia das ações primárias não faz mais sentido agora que NENHUM botão de ícone
+   tem fundo sólido; a cor de ação no ícone (em vez de `--cor-texto-suave`) já é distinção
+   suficiente. */
 .botao-icone-secundario {
   background: transparent;
   color: var(--cor-primaria);
-  border: 1.5px solid var(--cor-primaria);
 }
 
 .botao-icone-secundario:not(:disabled):hover {
   background: var(--cor-info-fundo);
+  color: var(--cor-primaria);
 }
 
 /* Ícone estático (recepção): já confirmado, não é clicável — indicador visual só. */
@@ -1226,7 +1303,6 @@ tbody tr:hover {
   background: var(--cor-fundo);
   color: var(--cor-texto-suave);
   border: 1px solid var(--cor-borda);
-  font-family: var(--fonte-mono);
   font-size: 0.8rem;
   font-weight: 600;
   gap: 6px;
@@ -1290,7 +1366,7 @@ tbody tr:hover {
   gap: 8px;
   padding: 0 14px;
   border: 1px solid var(--cor-borda);
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   background: var(--cor-superficie);
   color: var(--cor-texto-suave);
 }
@@ -1326,7 +1402,7 @@ tbody tr:hover {
   padding: 16px;
   background: var(--cor-superficie);
   border: 1px solid var(--cor-borda);
-  border-radius: 12px;
+  border-radius: var(--raio-cartao);
   box-shadow: 0 1px 2px rgba(14, 46, 56, 0.04);
 }
 
@@ -1336,7 +1412,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--raio-cartao);
   background: var(--cor-info-fundo);
   color: var(--cor-primaria);
 }
@@ -1383,7 +1459,7 @@ tbody tr:hover {
   min-height: 500px;
   width: 100%;
   border: 1px solid var(--cor-borda);
-  border-radius: 12px;
+  border-radius: var(--raio-cartao);
   background: var(--painel-fundo, #eef3f4);
 }
 
@@ -1391,7 +1467,7 @@ tbody tr:hover {
    seleção de guichê, com um cartão de conteúdo livre em vez do grid de quadrados. */
 .modal-cartao {
   background: var(--cor-superficie);
-  border-radius: 12px;
+  border-radius: var(--raio-modal);
   padding: var(--espaco-5);
   max-width: 420px;
   width: 100%;
@@ -1423,7 +1499,7 @@ tbody tr:hover {
 
 .modal-selecao-guiche {
   background: var(--cor-superficie);
-  border-radius: 14px;
+  border-radius: var(--raio-modal);
   padding: var(--espaco-6);
   max-width: 560px;
   width: 100%;
@@ -1448,7 +1524,7 @@ tbody tr:hover {
   padding: var(--espaco-3);
   font-size: 1.05rem;
   font-weight: 700;
-  border-radius: 12px;
+  border-radius: var(--raio-cartao);
   background: var(--cor-fundo);
   color: var(--cor-texto);
   border: 2px solid var(--cor-borda);
@@ -1485,7 +1561,6 @@ tbody tr:hover {
 }
 
 .contagem-ausencia {
-  font-family: var(--fonte-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 1.05rem;
@@ -1548,7 +1623,8 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   padding: var(--espaco-5) var(--espaco-4);
-  background: linear-gradient(180deg, var(--cor-marca-clara), var(--cor-marca));
+  /* Fundo chapado (24/09, mesmo motivo do `.cabecalho` acima) — era um degradê vertical. */
+  background: var(--cor-marca);
   color: var(--cor-marca-texto);
 }
 
@@ -1583,7 +1659,7 @@ tbody tr:hover {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   background: none;
   border: none;
   color: var(--cor-marca-texto-suave);
@@ -1720,7 +1796,7 @@ tbody tr:hover {
   max-height: 180px;
   overflow-y: auto;
   border: 1px solid var(--cor-borda);
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   padding: var(--espaco-2) var(--espaco-3);
 }
 
@@ -1775,7 +1851,7 @@ tbody tr:hover {
   gap: var(--espaco-3);
   min-height: 260px;
   border: 2px dashed var(--cor-borda);
-  border-radius: 14px;
+  border-radius: var(--raio-cartao);
   background: var(--cor-superficie);
   color: var(--cor-texto-suave);
   text-align: center;
@@ -1863,7 +1939,7 @@ circle.grafico-linha-erro { fill: var(--cor-erro); }
   background: var(--cor-marca);
   color: var(--cor-marca-texto);
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--raio-pequeno);
   font-size: 0.78rem;
   white-space: nowrap;
   pointer-events: none;
@@ -1874,14 +1950,9 @@ circle.grafico-linha-erro { fill: var(--cor-erro); }
   z-index: 5;
 }
 
-.grafico-tooltip span {
-  font-family: var(--fonte-mono);
-}
-
 .grafico-eixo-texto {
   font-size: 9px;
   fill: var(--cor-texto-suave);
-  font-family: var(--fonte-mono);
 }
 
 .grafico-legenda {
@@ -1967,7 +2038,7 @@ circle.grafico-linha-erro { fill: var(--cor-erro); }
 
 .linha-guiche {
   border: 1px solid var(--cor-borda);
-  border-radius: 10px;
+  border-radius: var(--raio-cartao);
   overflow: hidden;
 }
 

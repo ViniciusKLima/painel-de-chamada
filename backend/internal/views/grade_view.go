@@ -35,10 +35,12 @@ func GradesParaJSON(lista []domain.Grade) []map[string]any {
 
 // GuicheParaJSON expõe um guichê/sala, incluindo ocupação em tempo real (já resolvida pelo
 // repository com a janela de heartbeat) e `excluida` (23/09, mesma distinção de GradeParaJSON).
+// `unidadeId` (16/10, era `gradeId`) — guichê pertence ao local físico, compartilhado por
+// todas as grades dele, ver domain.Guiche.
 func GuicheParaJSON(g domain.Guiche) map[string]any {
 	return map[string]any{
 		"id":                  g.ID,
-		"gradeId":             g.GradeID,
+		"unidadeId":           g.UnidadeID,
 		"nome":                g.Nome,
 		"ativo":               g.Ativo,
 		"tipo":                g.Tipo,

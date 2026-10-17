@@ -5,12 +5,15 @@ import { api, ApiError, type Agendamento, type ChamadoCompartilhado, type Guiche
 import Cabecalho from "../../componentes/Cabecalho";
 import { useNotificar } from "../../componentes/Notificacoes";
 import { aplicarTemaPrefeitura } from "../../tema";
+import { normalizarBusca } from "../../busca";
 
-// Chave por GRADE (23/09) — cada grade tem sua própria ocupação de guichê, já que um
-// atendente pode estar alocado em várias ao mesmo tempo (inclusive de unidades físicas
-// diferentes). Antes era uma chave só, porque só existia uma grade em uso por vez.
-function chaveGuicheLocal(gradeId: string): string {
-  return `painel-chamada:guiche-selecionado:${gradeId}`;
+// Chave por UNIDADE (16/10, era por grade até 22/09→23/09 — guichê voltou a pertencer ao
+// local físico, não ao serviço: "a pessoa só escolhe um [guichê] e já serve pra todos [os
+// serviços/grades daquele local]"). Um atendente com grades em unidades físicas diferentes
+// ainda escolhe um guichê por unidade — só não escolhe mais um por GRADE dentro da mesma
+// unidade.
+function chaveGuicheLocal(unidadeId: string): string {
+  return `painel-chamada:guiche-selecionado:${unidadeId}`;
 }
 
 function lerLocal(chave: string): string | null {
@@ -32,8 +35,9 @@ function gravarLocal(chave: string, valor: string) {
 // Reafirma a ocupação dos guichês a cada 5s (heartbeat) — bem menor que a janela de 15s que
 // o backend usa pra considerar um guichê "abandonado" (aba fechada sem logout), pra tolerar
 // perda ocasional de uma requisição sem derrubar a ocupação por engano (22/09, ver skill
-// regras-negocio-fila). Roda por GRADE agora (23/09) — um atendente pode ter um guichê
-// ocupado em cada uma de várias grades ao mesmo tempo.
+// regras-negocio-fila). Roda por UNIDADE (16/10, era por grade) — um atendente pode ter um
+// guichê ocupado em cada uma de várias unidades físicas ao mesmo tempo, mas só UM por
+// unidade (compartilhado entre todas as grades dela).
 const INTERVALO_HEARTBEAT_GUICHE_MS = 5000;
 const INTERVALO_POLL_DADOS_MS = 2000;
 const INTERVALO_POLL_GUICHES_MS = 2000;
@@ -145,11 +149,6 @@ function LinhaChamado({
 
 type AbaSalaEspera = "espera" | "ausentes";
 
-// Normaliza pra comparação de busca — mesma lógica da recepção (case-insensitive, ignora
-// pontuação, útil se um dia o protocolo tiver separadores).
-function normalizarBusca(texto: string): string {
-  return texto.toLowerCase().replace(/[.\-/\s]/g, "");
-}
 
 // Atendente sempre tem unidadeNome preenchido na sessão (ver skill modelo-dados) — mas
 // desde a auditoria de multi-grade (23/09) isso é só a unidade "principal" do cadastro do
@@ -192,18 +191,26 @@ export default function SalaDeEspera() {
   const [ausentesHoje, setAusentesHoje] = useState<Agendamento[]>([]);
   const [abaSalaEspera, setAbaSalaEspera] = useState<AbaSalaEspera>("espera");
   const [buscaAtendimentos, setBuscaAtendimentos] = useState("");
-  // Guichês agrupados por grade — um atendente pode ter um guichê ocupado em CADA grade ao
-  // mesmo tempo, já que cada grade é uma fila física própria (23/09).
-  const [guichesPorGrade, setGuichesPorGrade] = useState<Record<string, Guiche[]>>({});
-  const [guicheSelecionadoPorGrade, setGuicheSelecionadoPorGrade] = useState<Record<string, string>>({});
-  // Qual grade tem o modal de seleção de guichê aberto agora (null = nenhum) — não é mais um
-  // gate obrigatório de tela cheia: cada grade resolve o próprio guichê sob demanda, sem
-  // bloquear as outras grades já resolvidas (23/09, "não quero uma interface em que o
-  // atendente precise selecionar uma grade" — e, por extensão, sem travar a tela toda
-  // esperando uma escolha de guichê também).
-  const [modalGuicheGradeId, setModalGuicheGradeId] = useState<string | null>(null);
-  const guicheSelecionadoRef = useRef(guicheSelecionadoPorGrade);
-  guicheSelecionadoRef.current = guicheSelecionadoPorGrade;
+  // Guichês agrupados por UNIDADE (16/10, era por grade) — um atendente pode ter um guichê
+  // ocupado em CADA unidade física onde tem grade alocada, mas só UM por unidade, já que o
+  // guichê é compartilhado entre todas as grades dela (pedido direto: "não deve ter opção de
+  // escolher guichê pra cada grade... a pessoa só escolhe um e já serve pra todos").
+  const [guichesPorUnidade, setGuichesPorUnidade] = useState<Record<string, Guiche[]>>({});
+  const [guicheSelecionadoPorUnidade, setGuicheSelecionadoPorUnidade] = useState<Record<string, string>>({});
+  // Qual unidade tem o modal de seleção de guichê aberto agora (null = nenhum) — não é um
+  // gate obrigatório de tela cheia: cada unidade resolve o próprio guichê sob demanda, sem
+  // bloquear as outras já resolvidas (23/09, "não quero uma interface em que o atendente
+  // precise selecionar uma grade" — e, por extensão, sem travar a tela toda esperando uma
+  // escolha de guichê também).
+  const [modalGuicheUnidadeId, setModalGuicheUnidadeId] = useState<string | null>(null);
+  const guicheSelecionadoRef = useRef(guicheSelecionadoPorUnidade);
+  guicheSelecionadoRef.current = guicheSelecionadoPorUnidade;
+  // Grades "atuais", num ref — usado pelo heartbeat (deps `[]`, não pode reler `grades` via
+  // closure stale) pra achar uma grade representativa de cada unidade (a rota de
+  // ocupar/liberar continua "por grade" — qualquer grade da unidade serve pra autenticar a
+  // ação, já que o guichê em si é resolvido pela unidade dela no backend).
+  const gradesRef = useRef<GradeResumo[]>([]);
+  gradesRef.current = grades;
   const notificar = useNotificar();
   const navigate = useNavigate();
 
@@ -222,42 +229,49 @@ export default function SalaDeEspera() {
 
   const carregarGuiches = useCallback(async () => {
     const lista = await api.minhasGradesGuiches();
-    const porGrade: Record<string, Guiche[]> = {};
+    const porUnidade: Record<string, Guiche[]> = {};
     for (const g of lista) {
-      (porGrade[g.gradeId] ??= []).push(g);
+      (porUnidade[g.unidadeId] ??= []).push(g);
     }
-    setGuichesPorGrade(porGrade);
-    return porGrade;
+    setGuichesPorUnidade(porUnidade);
+    return porUnidade;
   }, []);
 
-  // Tenta reocupar automaticamente o guichê lembrado de cada grade em `gradesAlvo` (23/09) —
-  // sem pedir confirmação de novo, já que a regra de negócio não quer nenhuma seleção
-  // obrigatória bloqueando a tela. Se o guichê lembrado já estiver ocupado por outra pessoa
-  // (ex: alguém assumiu enquanto o atendente estava fora, ou a grade acabou de ser alocada
-  // pra ele agora mesmo), a ocupação falha silenciosamente e a grade fica sem guichê —
-  // aparece como "Selecionar guichê" na seção dela, sem travar as outras grades já
-  // resolvidas. Reaproveitada tanto no carregamento inicial quanto quando uma grade nova
-  // aparece em runtime (realocação feita por um gestor/admin, ver poll de sessão abaixo).
+  // Tenta reocupar automaticamente o guichê lembrado de cada UNIDADE representada em
+  // `gradesAlvo` (16/10, era por grade) — sem pedir confirmação de novo, já que a regra de
+  // negócio não quer nenhuma seleção obrigatória bloqueando a tela. Se o guichê lembrado já
+  // estiver ocupado por outra pessoa (ex: alguém assumiu enquanto o atendente estava fora, ou
+  // a unidade acabou de ganhar uma grade alocada pra ele agora mesmo), a ocupação falha
+  // silenciosamente e a unidade fica sem guichê — aparece como "Selecionar guichê" na seção
+  // dela, sem travar as outras unidades já resolvidas. Reaproveitada tanto no carregamento
+  // inicial quanto quando uma grade nova aparece em runtime (realocação feita por um
+  // gestor/admin, ver poll de sessão abaixo).
   const resolverGuichesLembrados = useCallback(async (gradesAlvo: GradeResumo[]) => {
     if (gradesAlvo.length === 0) return;
-    const porGrade = await carregarGuiches();
+    const porUnidade = await carregarGuiches();
+    // Uma linha por UNIDADE (não por grade) — a rota de ocupar ainda pede um gradeId só pra
+    // autenticar a ação, qualquer grade daquela unidade serve pra isso.
+    const unidadesAlvo = new Map<string, string>();
+    for (const g of gradesAlvo) {
+      if (!unidadesAlvo.has(g.unidadeId)) unidadesAlvo.set(g.unidadeId, g.id);
+    }
     const selecoes: Record<string, string> = {};
     await Promise.all(
-      gradesAlvo.map(async (g) => {
-        const lembrado = lerLocal(chaveGuicheLocal(g.id));
+      Array.from(unidadesAlvo.entries()).map(async ([unidadeId, gradeRepresentativa]) => {
+        const lembrado = lerLocal(chaveGuicheLocal(unidadeId));
         if (!lembrado) return;
-        const existe = (porGrade[g.id] ?? []).some((guiche) => guiche.id === lembrado);
+        const existe = (porUnidade[unidadeId] ?? []).some((guiche) => guiche.id === lembrado);
         if (!existe) return;
         try {
-          await api.ocuparGuiche(g.id, lembrado);
-          selecoes[g.id] = lembrado;
+          await api.ocuparGuiche(gradeRepresentativa, lembrado);
+          selecoes[unidadeId] = lembrado;
         } catch {
           // guichê perdido pra outro atendente — segue sem selecionar, resolve pelo modal
         }
       })
     );
     if (Object.keys(selecoes).length > 0) {
-      setGuicheSelecionadoPorGrade((atual) => ({ ...atual, ...selecoes }));
+      setGuicheSelecionadoPorUnidade((atual) => ({ ...atual, ...selecoes }));
     }
   }, [carregarGuiches]);
 
@@ -322,51 +336,60 @@ export default function SalaDeEspera() {
     return () => clearInterval(id);
   }, [grades.length, resolverGuichesLembrados]);
 
-  // Limpeza (23/09): se uma grade sai da lista (realocação feita por um gestor/admin — ver
-  // poll de sessão acima), qualquer guichê que o atendente tinha ocupado NELA é liberado no
-  // backend e removido do estado local — sem isso, o heartbeat continuaria tentando reafirmar
-  // a ocupação de um guichê que ele não tem mais acesso (a rota exige a grade dele, ver
-  // exigirGrade), e a UI achando (erradamente) que ele ainda está posicionado ali.
+  // Limpeza (16/10, era por grade): se TODAS as grades de uma unidade saem da lista
+  // (realocação feita por um gestor/admin — ver poll de sessão acima), o guichê que o
+  // atendente tinha ocupado NAQUELA unidade é liberado no backend e removido do estado local
+  // — sem isso, o heartbeat continuaria tentando reafirmar a ocupação de um guichê que ele
+  // não tem mais acesso, e a UI achando (erradamente) que ele ainda está posicionado ali. Se
+  // só UMA das grades da unidade sai (ele continua com outra grade do mesmo local), o guichê
+  // continua válido — nada é liberado. Precisa de uma grade "antiga" (antes da remoção) pra
+  // montar a URL de liberar, já que `grades` não tem mais nenhuma da unidade removida.
+  const gradesAnterioresRef = useRef<GradeResumo[]>([]);
   useEffect(() => {
-    const idsValidos = new Set(grades.map((g) => g.id));
-    setGuicheSelecionadoPorGrade((atual) => {
-      const removidas = Object.entries(atual).filter(([gradeId]) => !idsValidos.has(gradeId));
+    const unidadesValidas = new Set(grades.map((g) => g.unidadeId));
+    setGuicheSelecionadoPorUnidade((atual) => {
+      const removidas = Object.entries(atual).filter(([unidadeId]) => !unidadesValidas.has(unidadeId));
       if (removidas.length === 0) return atual;
-      removidas.forEach(([gradeId, guicheId]) => {
-        api.liberarGuiche(gradeId, guicheId).catch(() => {});
+      removidas.forEach(([unidadeId, guicheId]) => {
+        const gradeAntiga = gradesAnterioresRef.current.find((g) => g.unidadeId === unidadeId);
+        if (gradeAntiga) api.liberarGuiche(gradeAntiga.id, guicheId).catch(() => {});
       });
       const proximo = { ...atual };
-      removidas.forEach(([gradeId]) => delete proximo[gradeId]);
+      removidas.forEach(([unidadeId]) => delete proximo[unidadeId]);
       return proximo;
     });
+    gradesAnterioresRef.current = grades;
   }, [grades]);
 
-  // Enquanto o modal de guichê de alguma grade está aberto, mantém a lista atualizada (2s) —
-  // é assim que um atendente vê em tempo real um guichê ficando ocupado/liberado por outro
+  // Enquanto o modal de guichê de alguma unidade está aberto, mantém a lista atualizada (2s)
+  // — é assim que um atendente vê em tempo real um guichê ficando ocupado/liberado por outro
   // (22/09, ver skill regras-negocio-fila).
   useEffect(() => {
-    if (!modalGuicheGradeId) return;
+    if (!modalGuicheUnidadeId) return;
     const id = setInterval(() => {
       carregarGuiches().catch(() => {});
     }, INTERVALO_POLL_GUICHES_MS);
     return () => clearInterval(id);
-  }, [modalGuicheGradeId, carregarGuiches]);
+  }, [modalGuicheUnidadeId, carregarGuiches]);
 
-  // Heartbeat (22/09, agora por grade — 23/09): reafirma a ocupação de TODOS os guichês
+  // Heartbeat (22/09, por unidade desde 16/10): reafirma a ocupação de TODOS os guichês
   // selecionados periodicamente — sem isso, o backend liberaria cada guichê pra outro
   // atendente depois da janela de 15s mesmo com o atendente ainda trabalhando ali. Se o
   // heartbeat falhar (guichê perdido, ex: outro atendente assumiu depois de uma queda de
-  // conexão longa), a seleção daquela grade é limpa — a seção correspondente volta a mostrar
-  // "Selecionar guichê" em vez de continuar achando (erradamente) que está ocupando algo.
+  // conexão longa), a seleção daquela unidade é limpa — a seção correspondente volta a
+  // mostrar "Selecionar guichê" em vez de continuar achando (erradamente) que está ocupando
+  // algo.
   useEffect(() => {
     const id = setInterval(() => {
       const selecoes = guicheSelecionadoRef.current;
-      Object.entries(selecoes).forEach(([gradeId, guicheId]) => {
-        api.ocuparGuiche(gradeId, guicheId).catch(() => {
-          setGuicheSelecionadoPorGrade((atual) => {
-            if (atual[gradeId] !== guicheId) return atual;
+      Object.entries(selecoes).forEach(([unidadeId, guicheId]) => {
+        const gradeRepresentativa = gradesRef.current.find((g) => g.unidadeId === unidadeId);
+        if (!gradeRepresentativa) return;
+        api.ocuparGuiche(gradeRepresentativa.id, guicheId).catch(() => {
+          setGuicheSelecionadoPorUnidade((atual) => {
+            if (atual[unidadeId] !== guicheId) return atual;
             const proximo = { ...atual };
-            delete proximo[gradeId];
+            delete proximo[unidadeId];
             return proximo;
           });
         });
@@ -375,28 +398,31 @@ export default function SalaDeEspera() {
     return () => clearInterval(id);
   }, []);
 
-  async function escolherGuiche(gradeId: string, guicheId: string) {
+  async function escolherGuiche(unidadeId: string, guicheId: string) {
+    const gradeRepresentativa = grades.find((g) => g.unidadeId === unidadeId);
+    if (!gradeRepresentativa) return;
     try {
-      await api.ocuparGuiche(gradeId, guicheId);
+      await api.ocuparGuiche(gradeRepresentativa.id, guicheId);
     } catch (err) {
       notificar(err instanceof ApiError ? err.message : "Não foi possível ocupar este guichê.", "erro");
       carregarGuiches().catch(() => {});
       return;
     }
-    setGuicheSelecionadoPorGrade((atual) => ({ ...atual, [gradeId]: guicheId }));
-    gravarLocal(chaveGuicheLocal(gradeId), guicheId);
-    setModalGuicheGradeId(null);
+    setGuicheSelecionadoPorUnidade((atual) => ({ ...atual, [unidadeId]: guicheId }));
+    gravarLocal(chaveGuicheLocal(unidadeId), guicheId);
+    setModalGuicheUnidadeId(null);
   }
 
-  function abrirModalGuiche(gradeId: string) {
+  function abrirModalGuiche(unidadeId: string) {
     carregarGuiches().catch(() => {});
-    setModalGuicheGradeId(gradeId);
+    setModalGuicheUnidadeId(unidadeId);
   }
 
   async function sair() {
-    const liberacoes = Object.entries(guicheSelecionadoPorGrade).map(([gradeId, guicheId]) =>
-      api.liberarGuiche(gradeId, guicheId).catch(() => {})
-    );
+    const liberacoes = Object.entries(guicheSelecionadoPorUnidade).map(([unidadeId, guicheId]) => {
+      const gradeRepresentativa = grades.find((g) => g.unidadeId === unidadeId);
+      return gradeRepresentativa ? api.liberarGuiche(gradeRepresentativa.id, guicheId).catch(() => {}) : Promise.resolve();
+    });
     await Promise.all(liberacoes);
     await api.sair();
     navigate("/login");
@@ -413,19 +439,21 @@ export default function SalaDeEspera() {
   }
 
   function chamarProximo(gradeId: string) {
-    const guicheId = guicheSelecionadoPorGrade[gradeId];
+    const unidadeId = gradesPorId.get(gradeId)?.unidadeId;
+    const guicheId = unidadeId ? guicheSelecionadoPorUnidade[unidadeId] : undefined;
     if (!guicheId) {
-      abrirModalGuiche(gradeId);
+      if (unidadeId) abrirModalGuiche(unidadeId);
       return;
     }
     acao(() => api.chamarProximo(gradeId, guicheId), "Próximo chamado.");
   }
 
   function assumir(item: ChamadoCompartilhado) {
-    const guicheId = guicheSelecionadoPorGrade[item.gradeId];
+    const unidadeId = gradesPorId.get(item.gradeId)?.unidadeId;
+    const guicheId = unidadeId ? guicheSelecionadoPorUnidade[unidadeId] : undefined;
     if (!guicheId) {
-      notificar("Selecione um guichê nessa grade antes de assumir.", "erro");
-      abrirModalGuiche(item.gradeId);
+      notificar("Selecione um guichê nessa unidade antes de assumir.", "erro");
+      if (unidadeId) abrirModalGuiche(unidadeId);
       return;
     }
     acao(() => api.assumirChamada(item.id, guicheId), "Chamado assumido.");
@@ -468,8 +496,17 @@ export default function SalaDeEspera() {
     return atendidosHoje.filter((a) => normalizarBusca(a.nomeCidadao).includes(alvo) || normalizarBusca(a.protocolo).includes(alvo));
   })();
 
-  const gradeModal = modalGuicheGradeId ? gradesPorId.get(modalGuicheGradeId) : null;
-  const guichesDoModal = modalGuicheGradeId ? guichesPorGrade[modalGuicheGradeId] ?? [] : [];
+  const unidadeModal = modalGuicheUnidadeId ? grupos.find((gr) => gr.unidadeId === modalGuicheUnidadeId) : null;
+  const guichesDoModal = modalGuicheUnidadeId ? guichesPorUnidade[modalGuicheUnidadeId] ?? [] : [];
+
+  // Resumo dos guichês já resolvidos, pro cabeçalho ("ATENDENTE: NOME - GUICHÊ X", 16/10) —
+  // um atendente com grades em mais de uma unidade física pode ter mais de um guichê ao mesmo
+  // tempo (ver `guicheSelecionadoPorUnidade` acima), então junta todos os nomes já
+  // resolvidos; unidade sem guichê escolhido ainda não entra na lista.
+  const guicheResumo = Object.entries(guicheSelecionadoPorUnidade)
+    .map(([unidadeId, guicheId]) => guichesPorUnidade[unidadeId]?.find((g) => g.id === guicheId)?.nome)
+    .filter((nome): nome is string => Boolean(nome))
+    .join(", ") || null;
 
   return (
     <>
@@ -478,6 +515,7 @@ export default function SalaDeEspera() {
         papel="Atendente"
         unidadeNome={usuario.unidadeNome}
         prefeituraNome={usuario.prefeituraNome}
+        guiche={guicheResumo}
         acoes={
           <button onClick={sair}>
             <LogOut size={16} /> Sair
@@ -486,15 +524,15 @@ export default function SalaDeEspera() {
       />
 
       <div className="pagina pagina-larga">
-        {/* Modal de guichê agora é POR GRADE, aberto sob demanda (23/09) — nunca bloqueia a
-            tela inteira: as outras grades já resolvidas continuam operando normalmente atrás
-            dele. Mesmo padrão visual de sempre (quadrados clicáveis, ocupado por outro fica
-            desabilitado com o nome de quem está lá). */}
-        {gradeModal && (
-          <div className="modal-fundo" onClick={() => setModalGuicheGradeId(null)}>
+        {/* Modal de guichê é POR UNIDADE (16/10, era por grade), aberto sob demanda (23/09) —
+            nunca bloqueia a tela inteira: as outras unidades já resolvidas continuam operando
+            normalmente atrás dele. Mesmo padrão visual de sempre (quadrados clicáveis,
+            ocupado por outro fica desabilitado com o nome de quem está lá). */}
+        {unidadeModal && (
+          <div className="modal-fundo" onClick={() => setModalGuicheUnidadeId(null)}>
             <div className="modal-selecao-guiche" onClick={(e) => e.stopPropagation()}>
               <h2>Qual guichê você vai atender?</h2>
-              <p className="aviso">{gradeModal.unidadeNome} — {gradeModal.nome}</p>
+              <p className="aviso">{unidadeModal.unidadeNome}</p>
               {guichesDoModal.length === 0 ? (
                 <p>Nenhum guichê cadastrado — peça pro gestor cadastrar um.</p>
               ) : (
@@ -505,7 +543,7 @@ export default function SalaDeEspera() {
                       <button
                         key={g.id}
                         className="quadro-guiche"
-                        onClick={() => escolherGuiche(gradeModal.id, g.id)}
+                        onClick={() => escolherGuiche(unidadeModal.unidadeId, g.id)}
                         disabled={ocupadoPorOutro}
                         title={ocupadoPorOutro ? `Ocupado por ${g.ocupadoPorNome}` : undefined}
                       >
@@ -576,35 +614,40 @@ export default function SalaDeEspera() {
               // chamada são escopados por grade, não pela unidade nem pelo atendente como um
               // todo (ver motivoBloqueio acima).
               <div className="grupos-unidade">
-                {grupos.map((grupo) => (
-                  <div key={grupo.unidadeId} className="grupo-unidade">
-                    {grupos.length > 1 && <h3 className="grupo-unidade-titulo">{grupo.unidadeNome}</h3>}
-                    {grupo.grades.map((g) => {
-                      const itensGrade = espera.filter((a) => a.gradeId === g.id);
-                      const guicheAtual = guicheSelecionadoPorGrade[g.id];
-                      const nomeGuicheAtual = guichesPorGrade[g.id]?.find((x) => x.id === guicheAtual)?.nome;
-                      const bloqueio = motivoBloqueio(g.id);
-                      return (
-                        <div key={g.id} className="grupo-grade">
-                          <div className="grupo-grade-cabecalho">
-                            <div>
-                              <strong>{g.nome}</strong>
-                              <span className="grupo-grade-contagem"> ({itensGrade.length})</span>
+                {grupos.map((grupo) => {
+                  // Guichê é da UNIDADE (16/10) — uma escolha só, mostrada/selecionada uma
+                  // vez no cabeçalho do grupo, não mais repetida em cada grade dela.
+                  const guicheAtualUnidade = guicheSelecionadoPorUnidade[grupo.unidadeId];
+                  const nomeGuicheAtualUnidade = guichesPorUnidade[grupo.unidadeId]?.find((x) => x.id === guicheAtualUnidade)?.nome;
+                  return (
+                    <div key={grupo.unidadeId} className="grupo-unidade">
+                      <div className="grupo-grade-cabecalho">
+                        {grupos.length > 1 ? <h3 className="grupo-unidade-titulo">{grupo.unidadeNome}</h3> : <span />}
+                        <button className="pilula-guiche" onClick={() => abrirModalGuiche(grupo.unidadeId)}>
+                          {nomeGuicheAtualUnidade ?? "Selecionar guichê"}
+                        </button>
+                      </div>
+                      {grupo.grades.map((g) => {
+                        const itensGrade = espera.filter((a) => a.gradeId === g.id);
+                        const bloqueio = motivoBloqueio(g.id);
+                        return (
+                          <div key={g.id} className="grupo-grade">
+                            <div className="grupo-grade-cabecalho">
+                              <div>
+                                <strong>{g.nome}</strong>
+                                <span className="grupo-grade-contagem"> ({itensGrade.length})</span>
+                              </div>
+                              <div className="grupo-grade-acoes">
+                                <button
+                                  disabled={bloqueio !== null}
+                                  onClick={() => chamarProximo(g.id)}
+                                  title={bloqueio ?? (guicheAtualUnidade ? "Chamar próximo da fila" : "Escolher guichê e chamar")}
+                                >
+                                  <Megaphone size={16} /> Chamar próximo
+                                </button>
+                              </div>
                             </div>
-                            <div className="grupo-grade-acoes">
-                              <button className="pilula-guiche" onClick={() => abrirModalGuiche(g.id)}>
-                                {nomeGuicheAtual ?? "Selecionar guichê"}
-                              </button>
-                              <button
-                                disabled={bloqueio !== null}
-                                onClick={() => chamarProximo(g.id)}
-                                title={bloqueio ?? (guicheAtual ? "Chamar próximo da fila" : "Escolher guichê e chamar")}
-                              >
-                                <Megaphone size={16} /> Chamar próximo
-                              </button>
-                            </div>
-                          </div>
-                          {bloqueio && <p className="aviso">{bloqueio}</p>}
+                            {bloqueio && <p className="aviso">{bloqueio}</p>}
                           <div className="tabela-cartao">
                             <table>
                               <thead>
@@ -635,8 +678,9 @@ export default function SalaDeEspera() {
                         </div>
                       );
                     })}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="tabela-cartao">

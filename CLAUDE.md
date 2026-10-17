@@ -163,6 +163,15 @@ cancelled_by_user/no_show` — não bate 1:1 com o enum da skill `modelo-dados`
 (`aguardando_chegada/sala_espera/chamado/atendido/ausente`); e o conceito de "dependente" é
 real no domínio (schema `Dependent`, com CPF próprio quando cadastrado).
 
+**Reconfirmado em 16/10**, numa instância real diferente (Porto Velho-RO, não mais só o spec
+de Ipojuca): mesma limitação, idêntica — `GET /scheduling_appointments` continua só com
+`citizen_cpf` (obrigatório)/`status`/`per_page`, sem filtro de data/unidade/bulk. Checado
+também se haveria um webhook de agendamento como alternativa ao polling — não existe; o único
+webhook da plataforma ("Tramitação por Sistemas Externos") é escopado a submissão de
+formulário, não a agendamento. Ver skill `api-conecta-cidades`, seção "Reconfirmado em 16/10"
+— conclusão: upload manual de planilha não é mais uma ponte temporária, é o único caminho
+estrutural disponível até a plataforma abrir um endpoint novo.
+
 ## Próximos passos sugeridos
 
 1. ~~Resolver a tensão do CPF~~ ✅ resolvida (19/09) — sem máscara, ver "Identificação do cidadão".
@@ -2313,6 +2322,250 @@ exclusão/reativação) NÃO foram extraídos pra `views` como funções nomeada
 camada de View (extrair cada literal JSON de uma linha só seria reescrever cada handler sem
 ganho real). Skill `stack-go-react-postgres` atualizada com a estrutura de pastas nova e a
 regra prática de "onde vai cada coisa".
+
+## Identidade visual migrada pro design system do Conecta Cidades (16/10)
+
+Sessão retomada depois de um hiato (última rodada registrada era 24/09). O dono do produto
+pediu pra analisar o design system real do Conecta Cidades (empresa dona da plataforma
+"Jaboatão mais fácil"/"Jornada", documentado num artifact externo deles — site do cidadão em
+Tailwind, painel administrativo em Bootstrap) e comparar com a identidade visual já
+implementada aqui. A análise achou pontos de desalinhamento reais (fonte diferente, cor
+primária diferente, raio de borda diferente, gradiente no cabeçalho proibido por eles) — o
+pedido seguinte foi **"reestruture o estilo do painel de chamada pra seguir o design system
+do conecta, faça isso, de ponta a ponta"**.
+
+**Mudanças aplicadas** (detalhe completo e o porquê de cada valor na skill
+`identidade-visual`, seção "Reestruturação pro design system do Conecta Cidades"):
+- Fonte: `Public Sans` + `IBM Plex Mono` → **`Montserrat`** sozinha (inclusive em número —
+  Montserrat já suporta algarismo tabular).
+- Cor de ação (`--cor-primaria`): teal-azulado `#146c8c` → **`#d52e5f`**, valor exato dos
+  mockups do Conecta Cidades.
+- Cores semânticas (sucesso/erro/aviso): hue do Conecta Cidades, mas **escurecida** até
+  passar contraste WCAG AA como texto — os 3 valores originais deles (`#32c787`/`#ff6b68`/
+  `#ffc721`) falham contraste (~2-3:1) usados como texto pequeno sobre fundo claro, que é
+  como este sistema sempre usou essas cores (chip, estatística). O "fundo" claro de cada chip
+  continua usando o tom exato deles — só o texto por cima precisou escurecer.
+- Raio de borda: virou uma família de 3 tokens (`--raio-pequeno` 7px, `--raio-cartao` 10px,
+  `--raio-modal` 16px) — os valores exatos que o "painel administrativo" deles documenta. O
+  painel de TV (tela pública) usa 16px nos cartões grandes, mapeado como equivalente ao
+  "site do cidadão" deles (raio maior) em vez do "painel administrativo" (as outras telas,
+  todas internas/staff).
+- Gradiente do cabeçalho e da sidebar do gestor removido — viraram fundo **chapado**
+  (proibição explícita deles: "o produto usa cor chapada"). O token `--cor-marca-clara` e a
+  função `clarear()` em `tema.ts` que o calculava foram removidos por completo (ficaram
+  órfãos).
+- `lang="en"` → `lang="pt-BR"` em `index.html` (achado incidental da auditoria — nunca tinha
+  sido corrigido, proibição deles de inglês na interface).
+- `backend/migrations/000009_default_marca_conecta.up.sql`: default de
+  `prefeituras.cor_destaque`/`cor_clara` (usado só quando uma prefeitura NOVA é criada sem
+  escolher cor) realinhado pro novo valor — aplicado no Postgres de dev via `psql` (projeto
+  não usa `golang-migrate` de verdade ainda, todas as migrations até aqui foram aplicadas
+  manualmente, confirmado checando que não existe tabela `schema_migrations` no banco).
+
+**O que foi deliberadamente NÃO tocado**: a prefeitura real de Jaboatão **já tinha sua própria
+cor configurada pelo admin antes desta sessão** (`#0037c1`/`#cddcfe`, um azul — descoberto
+checando o Postgres de dev diretamente antes de mexer no default, pra não sobrescrever dado
+de configuração real por engano). Isso não foi alterado — é exatamente o comportamento
+correto do mecanismo de tema por prefeitura (`tema.ts`): o valor novo (`#d52e5f`) só aparece
+de fato em telas sem prefeitura (Login, Admin) ou numa prefeitura nova sem cor escolhida;
+Jaboatão continua operando na cor azul que o admin já tinha escolhido, sem nenhuma mudança
+visual pra quem usa o sistema de verdade hoje.
+
+**Validação**: `npx tsc --noEmit` e `npm run build` limpos; `go build`/`go vet`/`gofmt`
+limpos (nenhum arquivo `.go` foi tocado, só a migration SQL nova). Testado ao vivo no Chrome
+depois de subir backend+frontend locais de novo (ambos tinham caído desde a última sessão):
+tela de login com a cor/fonte novas, dashboard do gestor confirmando que a cor azul própria
+de Jaboatão continua intacta e agora chapada (sem degradê) no sidebar, tabela "Usuários
+internos" com os novos raios/cores semânticas (ícone de check verde e lixeira vermelha
+legíveis, zoom confirmou contraste), painel de TV público em modo descanso com cartão de
+16px e ícones de status (✓/✗) com a cor escurecida legível contra o fundo claro, tela de
+Recepção confirmando o cabeçalho chapado em 2 barras. Servidores locais (backend porta 3333,
+frontend porta 5173) deixados rodando ao final, a pedido implícito de sessões anteriores
+("rode o backend, quero usar").
+
+**Fora de escopo desta rodada**: nenhuma regra de negócio, endpoint ou schema (além do
+default de cor) foi alterado — é puramente identidade visual. A skill `identidade-visual` foi
+reescrita por trechos (não do zero) pra manter o histórico de 21/09 como contexto, marcando
+claramente o que foi superado pelo valor novo.
+
+## Escala de tamanho de fonte virou variável (16/10, mesma sessão)
+
+Logo depois de ver o resultado, o dono do produto achou as fontes grandes demais e pediu
+variáveis por tipo de texto pra testar tamanhos sem precisar caçar valor espalhado pelo CSS
+— especificamente citou conteúdo de tabela e os títulos acima delas. Causa raiz real: `<td>`
+e `<h1>`/`<h2>` soltos nunca tinham tido um `font-size` explícito, caindo no padrão do
+navegador (~16px/32px/24px) — bem maior que o resto da interface (sempre em 0.72-0.95rem) —,
+ficou mais evidente com a troca pra Montserrat (letra mais pesada que a Public Sans anterior
+no mesmo valor). 6 tokens novos em `:root` (`--fonte-tamanho-titulo-pagina/-secao/-cartao/
+-corpo/-tabela/-tabela-cabecalho`), aplicados em `h1`/`h2`/`h3`/`td`/`th`/`button,input,select`
+— testar tamanho novo só mexendo nesses 6 valores daqui pra frente, nunca num seletor
+específico. Painel de TV (`clamp()` responsivo ao viewport) ficou de fora de propósito — não
+é esse tipo de texto. Detalhe completo na skill `identidade-visual`, seção "Escala de tamanho
+de fonte". `tsc --noEmit`/`npm run build` limpos; confirmado ao vivo no Chrome (tela
+"Usuários internos" do gestor, antes/depois visivelmente mais proporcional).
+
+## 4 ajustes finos na identidade visual nova (16/10, mesma sessão)
+
+Lista curta pedida em sequência, depois de ver o resultado ao vivo:
+
+1. **Guichê ao lado do nome no cabeçalho**: `<Cabecalho>` ganhou prop `guiche?: string | null`
+   — subcabeçalho vira "ATENDENTE: NOME - GUICHÊ X" quando preenchido. Só `SalaDeEspera.tsx`
+   passa isso (junta os guichês já resolvidos de todas as grades do atendente, separados por
+   vírgula se houver mais de uma) — recepção/gestor/admin continuam sem o prop.
+2. **`.grupo-grade` sem moldura**: tinha border+padding+fundo em volta de cada grade na "Sala
+   de espera" — removido por completo, virou só espaçamento vertical direto sobre o fundo da
+   página (mesmo padrão "bloco sem cartão" já usado no resto da tela do atendente).
+3. **Busca na "Grade de horário"**: filtra por serviço OU nome da grade (`Grades.tsx`), mesmo
+   padrão `.barra-busca`/`.campo-busca` da recepção. `normalizarBusca` extraída pra
+   `frontend/src/busca.ts` nessa hora (era copiada em 2 arquivos, virou uma 3ª cópia — hora
+   certa de virar util compartilhado, como já estava documentado na skill).
+4. **Botão de ícone discreto**: `.botao-icone` (gear/lixeira/reativar nas tabelas) era 38px
+   com fundo sólido na cor de ação — virou 32px, sem fundo, só ícone colorido, com tingimento
+   leve no hover. Afeta todas as tabelas de gestão (Usuários internos, Grade de horário,
+   Prefeituras, guichês).
+
+Tudo em `frontend/` só — nenhuma mudança de backend. `tsc --noEmit`/`npm run build` limpos;
+confirmado ao vivo no Chrome nas 3 telas (atendente, Grade de horário com busca funcionando,
+Usuários internos com os ícones discretos). Detalhe de cada mudança na skill
+`identidade-visual` (seções novas: "Botão de ícone em tabela", "Cabeçalho mostra o guichê
+resolvido", "Blocos de grade sem moldura").
+
+## Guichê voltou a pertencer à unidade, não à grade (16/10, mudança de schema + regra de negócio)
+
+Pedido direto do dono do produto, depois de usar a tela nova: "não deve ter opção de
+escolher guichê pra cada grade que estiver alocado. não faz sentido a pessoa estar em dois
+guichês diferentes, a pessoa só escolhe um e já serve pra todos, pq ali é o lugar que ela vai
+atender as demandas". Reverte uma decisão de 22/09 (quando `guiches` passou de `unidade_id`
+pra `grade_id`, na introdução da entidade Grade) — na prática, fisicamente um guichê é uma
+mesa/sala de um LOCAL, não de um serviço específico dentro dele, e a mudança de 22/09 nunca
+deveria ter afetado isso.
+
+**Backend**:
+- Migration `000010_guiche_por_unidade`: `guiches.grade_id` → `guiches.unidade_id`. Fez o
+  dedup de dado real primeiro — a unidade "Cadastro Único Sede Prazeres" tinha duas grades
+  (principal + encaixe), cada uma com seu próprio "Guichê 1" (mesmo nome, IDs diferentes,
+  confirmado consultando o banco antes de escrever a migration). Unificou mantendo a linha
+  com mais histórico (58 agendamentos/73 chamadas vs. 1/1), repontou as referências da outra
+  antes de marcá-la excluída — confirmado depois via SQL que as contagens bateram
+  exatamente (59/74 na sobrevivente). Índice único virou parcial (`where excluido_em is
+  null`), porque o dedup deixa uma linha excluída e uma ativa convivendo com o mesmo nome.
+- `domain.Guiche.GradeID` → `.UnidadeID`; toda a cadeia de repository/controllers de guichê
+  (`internal/repository/grades.go`, `internal/controllers/fila.go` e `configuracao.go`)
+  trocou de escopo gradeID→unidadeID — **sem mudar nenhuma rota HTTP**: as URLs continuam
+  `/grades/{gradeId}/guiches/...` (é dali que o atendente está chamando no momento, e
+  `exigirGrade` já valida acesso), só o que o backend grava/lê mudou de `grade.ID` pra
+  `grade.UnidadeID` internamente. `ResolverOuCriarGrade` ajustado pra só criar o "Guichê 1"
+  automático se a UNIDADE ainda não tiver nenhum (antes criava um por GRADE, o que teria
+  reintroduzido a duplicata que a migration acabou de corrigir).
+- `ListarGuichesAtivosPorGrades` → `ListarGuichesAtivosPorUnidades` (recebe unidadeIDs já
+  deduplicados pelo controller, pra um atendente com 2 grades na mesma unidade não ver
+  guichê repetido na resposta consolidada).
+- `GuicheParaJSON`: campo `gradeId` → `unidadeId`.
+- `fila_regras_test.go` atualizado (CriarGuiche/ExcluirGuiche/ReativarGuiche/limpeza de
+  fixture) — 7/7 passando contra o schema novo.
+
+**Frontend** (`SalaDeEspera.tsx`, reescrita grande): estado de guichê (seleção, lista,
+modal) saiu de "por grade" pra "por unidade" — `guicheSelecionadoPorUnidade`,
+`guichesPorUnidade`, `modalGuicheUnidadeId`, `chaveGuicheLocal` agora por unidadeId. A pílula
+"Selecionar guichê" saiu de dentro de cada bloco de grade e subiu pro cabeçalho do grupo de
+unidade (mostrada uma vez por local físico, não mais uma vez por serviço) — grupos com uma
+unidade só (caso comum) mostram a pílula sozinha, sem o título da unidade (que só aparece com
+mais de uma). `resolverGuichesLembrados`, heartbeat, limpeza (grade removida) e `sair()`
+todos reescritos pra operar por unidade, usando sempre uma grade "representativa" daquela
+unidade só pra montar a URL das rotas (que continuam por grade). `GradeConfiguracao.tsx`
+ganhou uma nota (`.dica`) explicando que "Guichês e salas" edita a lista compartilhada da
+unidade, não só daquela grade.
+
+**Testado ao vivo no Chrome, de ponta a ponta** (não só por build): logado como "Atendente
+Teste" (2 grades, mesma unidade) — confirmado **uma única** pílula "Selecionar guichê" pro
+grupo inteiro; modal mostrando o nome da UNIDADE (não mais "unidade — grade") com a lista de
+guichês já consolidada das duas grades (incluindo o "Guichê 1" sobrevivente da fusão);
+escolher "Guichê 1" aplicou a mesma seleção nas DUAS grades ao mesmo tempo, sem pedir de
+novo; criado um encaixe de teste via curl, chamado pelo botão real da tela — "Chamar próximo"
+funcionou de ponta a ponta usando o guichê compartilhado; marcado como presente; "Sair"
+liberou o guichê de verdade (confirmado via SQL, `ocupado_por_usuario_id` voltou a `null`).
+Conferido também na tela do gestor: abrir a configuração da grade de ENCAIXE mostra a MESMA
+lista de guichês da grade principal (inclusive o duplicado antigo, aparecendo corretamente
+como excluído com botão de reativar), confirmando o compartilhamento na UI de gestão também.
+
+Documentado em detalhe nas skills `regras-negocio-fila` (seção "Guichê é por UNIDADE, não
+por grade"), `modelo-dados` (seção "Mudanças (16/10)") e `papeis-e-telas` (seção do atendente
+atualizada). `go build`/`go vet`/`gofmt`, `go test ./internal/repository/...` (7/7) e
+`tsc --noEmit`/`npm run build` todos limpos.
+
+## SSO/JWT: confirmado por documentação oficial real, deixa de ser inferência (16/10)
+
+O dono do produto perguntou "conseguimos implementar [o JWT]?" e deu acesso, ao vivo, a uma
+instância admin real da plataforma Conecta Cidades (`pvhmais.portovelho.ro.gov.br/docs/
+integracoes` — Porto Velho-RO, não Jaboatão, mas é o doc genérico "Integrações Externas" da
+mesma plataforma, versionado v1.0.0; o `iss` muda por município, o fluxo e os endpoints não).
+Até aqui o desenho de SSO (skill `auth-conecta-cidades`) vinha só de um produto IRMÃO +
+um token real decodificado à mão — essa foi a primeira vez vendo a documentação OFICIAL do
+fluxo em si, numa seção dedicada "Login Integrado (SSO) — Servidor".
+
+**Resultado: confirma quase tudo que já estava desenhado, e revela uma peça que faltava.** O
+fluxo (portal → clica num link → token de 30s/uso único na URL → nosso backend valida) bate
+exatamente; as claims (`sub/iss/aud/iat/exp/jti/preferred_username/email/roles[]/
+department_ids[]/unit_ids[]/cpf?`) batem exatamente, inclusive confirmando que
+`department_ids`/`unit_ids` são ARRAYS (um servidor pode ter mais de uma secretaria/unidade).
+**Peça nova**: a validação não pode ser só verificação de assinatura offline — a doc oficial
+exige uma segunda chamada **obrigatória**, `POST /oauth/introspect` (com um token de API
+nosso, permissão `introspect_api`, separado do token do usuário), que é o mecanismo real por
+trás do "uso único" (uma segunda introspection do mesmo token volta `active: false`).
+
+**Resposta direta pro dono do produto**: sim, dá pra implementar — o desenho já está pronto e
+agora tem confirmação oficial. O que falta não é mais pesquisa, é registro administrativo do
+lado da plataforma (que só quem tem acesso ao painel admin de Jaboatão consegue fazer): (1)
+cadastrar o painel de chamada como integração lá (gera o `aud` de verdade), (2) conseguir um
+token de API com permissão `introspect_api` específico de Jaboatão. Detalhe completo, com a
+seção de validação atualizada (passo 8: introspection obrigatória) e o resto das pendências,
+na skill `auth-conecta-cidades`, seção "Confirmação por documentação OFICIAL real (16/10)".
+**Nenhum código foi escrito ainda** — SSO continua formalmente pós-MVP (decisão de 19/09) até
+o dono do produto decidir puxar pra dentro do escopo agora que sabe que é viável.
+
+## Hospedagem temporária via túnel + prefeitura "Smartândia" de teste (16/10, mesma sessão)
+
+Enquanto a equipe não define onde hospedar de vez, o dono do produto pediu pra deixar
+rodando **na própria máquina dele** por enquanto, testável publicamente: backend local +
+túnel do Cloudflare (`cloudflared`, binário baixado em `backend/.tools/`, já no
+`.gitignore` via `*.exe`) expondo `localhost:3333`, e o frontend (já hospedado no Vercel
+desde antes) apontando pra esse túnel via `VITE_API_URL`. **Isso exigiu dois ajustes de
+segurança reais, não só configuração**:
+
+1. Cookie de sessão cross-site: front (vercel.app) e backend (trycloudflare.com) são
+   domínios DIFERENTES de verdade, então o cookie `SameSite=Lax` de sempre não seria
+   enviado em chamadas `fetch`. `internal/auth/context.go` ganhou `RequisicaoViaHTTPS`
+   (detecta HTTPS via `X-Forwarded-Proto`, que o túnel repassa) — quando true, o cookie
+   vira `SameSite=None; Secure`; local-sem-túnel continua `Lax` exatamente como antes,
+   tudo no MESMO processo, sem precisar de um modo de execução separado.
+2. **Achado pela revisão automática de segurança, corrigido na hora**: `SameSite=None`
+   reabre a porta pra CSRF (é literalmente o que esse atributo existe pra bloquear) — e dois
+   endpoints (`importarPlanilha`/preview) mandam `multipart/form-data`, que nem dispara
+   preflight de CORS. `cmd/api/main.go`, middleware `cors()`, ganhou uma guarda extra:
+   qualquer método que muda estado (não-GET/HEAD) com um `Origin` presente e fora da lista
+   permitida toma 403 ali mesmo, antes do handler — fecha a lacuna independente de
+   preflight. Testado ao vivo: origem maliciosa → 403; origem real (Vercel) → 200 normal.
+
+**Limitações aceitas, explicadas ao dono do produto**: a máquina dele precisa ficar ligada
+com os dois processos rodando; o endereço do túnel não é fixo (muda se reiniciar, precisa
+atualizar a variável no Vercel e republicar de novo depois).
+
+**Prefeitura "Smartândia" criada como tenant real** (não só um teste descartável — fica): o
+dono do produto achou que a plataforma Conecta Cidades mantém uma cidade de testes pública
+de verdade, `mock.conectacidades.app` ("Smartândia"), com JWKS/discovery OIDC reais — gerou
+um token de teste lá (`roles: ["admin"]`, `aud` já apontando pro nosso domínio real do
+Vercel, confirmando que ele já cadastrou o painel como integração lá). Criada a prefeitura
+correspondente no nosso banco (`issuer_jwt = https://mock.conectacidades.app`, única forma
+de resolver `iss → prefeitura` na validação do SSO), com 1 secretaria ("Secretaria de
+Atendimento ao Cidadão"), 1 unidade ("CRAS Smartândia Centro"), 1 grade ("Atendimento
+Geral") e 1 guichê padrão — ambiente mínimo pronto pra quando o login SSO for implementado
+de verdade. Mapeamento de papel `admin→admin` (acesso master, sem vínculo) confirmado
+diretamente pelo dono do produto como correto, não é mais suposição.
+
+**Pendência levantada, não resolvida**: pedido de uma "modo demonstração" por prefeitura
+(dados estáticos, pra demonstrar sem depender de dado real) — ainda sem desenho, uma
+pergunta de esclarecimento foi feita antes de implementar (ver skill `auth-conecta-cidades`
+se isso evoluir, ou uma skill nova se o escopo crescer).
 
 ## Decisões em aberto (consolidado — atualizado 19/09)
 

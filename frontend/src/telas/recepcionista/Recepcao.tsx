@@ -5,12 +5,7 @@ import { api, ApiError, type Agendamento, type Grade, type Usuario } from "../..
 import Cabecalho from "../../componentes/Cabecalho";
 import { useNotificar } from "../../componentes/Notificacoes";
 import { aplicarTemaPrefeitura } from "../../tema";
-
-// Normaliza pra comparação de busca: minúsculas e sem pontuação de CPF/telefone, pra
-// "12345678900" encontrar "123.456.789-00" e vice-versa.
-function normalizarBusca(texto: string): string {
-  return texto.toLowerCase().replace(/[.\-/\s]/g, "");
-}
+import { normalizarBusca } from "../../busca";
 
 type Aba = "recepcao" | "sala_espera" | "ausente";
 

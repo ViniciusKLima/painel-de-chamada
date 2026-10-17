@@ -43,7 +43,7 @@ func (c *Controllers) PostLogin(w http.ResponseWriter, r *http.Request) {
 	// Best-effort: se falhar, não impede o login — é só o registro de "último acesso" da
 	// tela "Usuários internos" do gestor (22/09), não uma etapa crítica da autenticação.
 	_ = c.Repo.AtualizarUltimoAcesso(r.Context(), usuario.ID)
-	auth.DefinirCookieSessao(w, token, c.SessaoDuracao, c.CookieSeguro)
+	auth.DefinirCookieSessao(w, token, c.SessaoDuracao, c.CookieSeguro || auth.RequisicaoViaHTTPS(r))
 	views.ResponderJSON(w, http.StatusOK, c.usuarioParaJSON(r.Context(), usuario))
 }
 
@@ -53,7 +53,7 @@ func (c *Controllers) GetSessao(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controllers) DeleteSessao(w http.ResponseWriter, r *http.Request) {
-	auth.RemoverCookieSessao(w, c.CookieSeguro)
+	auth.RemoverCookieSessao(w, c.CookieSeguro || auth.RequisicaoViaHTTPS(r))
 	w.WriteHeader(http.StatusNoContent)
 }
 

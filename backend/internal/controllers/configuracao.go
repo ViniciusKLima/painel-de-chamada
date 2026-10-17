@@ -138,14 +138,14 @@ func (c *Controllers) DeleteGuiche(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	guicheID := chi.URLParam(r, "guicheId")
-	err := c.Repo.ExcluirGuiche(r.Context(), grade.ID, guicheID)
+	err := c.Repo.ExcluirGuiche(r.Context(), grade.UnidadeID, guicheID)
 	if err != nil {
 		if err == repository.ErrUltimoGuiche {
-			views.ResponderErro(w, http.StatusConflict, "ultimo_guiche", "a grade precisa de pelo menos um guiche ou sala")
+			views.ResponderErro(w, http.StatusConflict, "ultimo_guiche", "a unidade precisa de pelo menos um guiche ou sala")
 			return
 		}
 		if err == repository.ErrNaoEncontrado {
-			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 			return
 		}
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
@@ -167,10 +167,10 @@ func (c *Controllers) PostReativarGuiche(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	guicheID := chi.URLParam(r, "guicheId")
-	guiche, err := c.Repo.ReativarGuiche(r.Context(), grade.ID, guicheID)
+	guiche, err := c.Repo.ReativarGuiche(r.Context(), grade.UnidadeID, guicheID)
 	if err != nil {
 		if err == repository.ErrNaoEncontrado {
-			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 			return
 		}
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
@@ -190,7 +190,9 @@ func (c *Controllers) GetConfiguracaoGrade(w http.ResponseWriter, r *http.Reques
 		views.ResponderErro(w, http.StatusForbidden, "papel_sem_acesso", "apenas gestor")
 		return
 	}
-	guiches, err := c.Repo.ListarTodosGuiches(r.Context(), grade.ID)
+	// Guichês da UNIDADE da grade (16/10, ver domain.Guiche) — compartilhados com qualquer
+	// outra grade do mesmo local físico; editar daqui afeta todas elas.
+	guiches, err := c.Repo.ListarTodosGuiches(r.Context(), grade.UnidadeID)
 	if err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
@@ -317,7 +319,7 @@ func (c *Controllers) PostGuiche(w http.ResponseWriter, r *http.Request) {
 	if capacidade <= 0 {
 		capacidade = 1
 	}
-	guiche, err := c.Repo.CriarGuiche(r.Context(), grade.ID, repository.NovoGuicheOuSala{
+	guiche, err := c.Repo.CriarGuiche(r.Context(), grade.UnidadeID, repository.NovoGuicheOuSala{
 		Nome: corpo.Nome, Tipo: tipo, Andar: corpo.Andar, Capacidade: capacidade,
 	})
 	if err != nil {
@@ -348,13 +350,13 @@ func (c *Controllers) PatchGuiche(w http.ResponseWriter, r *http.Request) {
 		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "corpo da requisicao invalido")
 		return
 	}
-	linhas, err := c.Repo.AtualizarAtivoGuiche(r.Context(), grade.ID, guicheID, corpo.Ativo)
+	linhas, err := c.Repo.AtualizarAtivoGuiche(r.Context(), grade.UnidadeID, guicheID, corpo.Ativo)
 	if err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
 		return
 	}
 	if linhas == 0 {
-		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 		return
 	}
 	views.ResponderJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -394,12 +396,12 @@ func (c *Controllers) PutGuiche(w http.ResponseWriter, r *http.Request) {
 	if capacidade <= 0 {
 		capacidade = 1
 	}
-	guiche, err := c.Repo.AtualizarGuiche(r.Context(), grade.ID, guicheID, repository.AtualizacaoGuiche{
+	guiche, err := c.Repo.AtualizarGuiche(r.Context(), grade.UnidadeID, guicheID, repository.AtualizacaoGuiche{
 		Nome: corpo.Nome, Tipo: tipo, Andar: corpo.Andar, Capacidade: capacidade, Ativo: corpo.Ativo,
 	})
 	if err != nil {
 		if err == repository.ErrNaoEncontrado {
-			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta grade")
+			views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "guiche nao encontrado nesta unidade")
 			return
 		}
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())

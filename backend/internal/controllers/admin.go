@@ -404,3 +404,53 @@ func (c *Controllers) GetResumoAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	views.ResponderJSON(w, http.StatusOK, resumo)
 }
+
+// slugPrefeituraDemo é a ÚNICA prefeitura em que PostGerarDadosDemo aceita rodar — trava
+// deliberada (16/10, pedido direto: "só a Smartândia") pra um clique de admin nunca conseguir
+// injetar agendamento sintético numa prefeitura real por engano. Repetida aqui (não como
+// coluna nova em `prefeituras`) de propósito: "modo demonstração" é um recurso de UMA
+// prefeitura específica agora, não uma configuração geral — virar coluna/flag um dia é
+// decisão pra quando (se) o escopo crescer pra outras prefeituras.
+const slugPrefeituraDemo = "smartandia"
+
+// PostGerarDadosDemo: POST /api/v1/prefeituras/{prefeituraId}/demo/gerar — só admin, e só
+// pra prefeitura "Smartândia" (ambiente de teste da integração SSO, ver skill
+// auth-conecta-cidades). Substitui qualquer lote de demonstração anterior (limpa antes de
+// gerar) pela primeira grade da primeira unidade/secretaria dela — suficiente porque a
+// Smartândia nasceu com exatamente uma de cada (ver CLAUDE.md, 16/10).
+func (c *Controllers) PostGerarDadosDemo(w http.ResponseWriter, r *http.Request) {
+	if _, ok := exigirAdmin(w, r); !ok {
+		return
+	}
+	prefeituraID := chi.URLParam(r, "prefeituraId")
+	p, err := c.Repo.BuscarPrefeituraPorID(r.Context(), prefeituraID)
+	if err != nil {
+		views.ResponderErro(w, http.StatusNotFound, "nao_encontrado", "prefeitura nao encontrada")
+		return
+	}
+	if p.Slug != slugPrefeituraDemo {
+		views.ResponderErro(w, http.StatusForbidden, "prefeitura_sem_modo_demo", "geracao de dados de demonstracao so esta disponivel na prefeitura Smartandia")
+		return
+	}
+	secretarias, err := c.Repo.ListarSecretariasPorPrefeitura(r.Context(), prefeituraID)
+	if err != nil || len(secretarias) == 0 {
+		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", "secretaria de demonstracao nao encontrada")
+		return
+	}
+	unidades, err := c.Repo.ListarUnidades(r.Context(), secretarias[0].ID)
+	if err != nil || len(unidades) == 0 {
+		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", "unidade de demonstracao nao encontrada")
+		return
+	}
+	grades, err := c.Repo.ListarGradesPorUnidade(r.Context(), unidades[0].ID)
+	if err != nil || len(grades) == 0 {
+		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", "grade de demonstracao nao encontrada")
+		return
+	}
+	total, err := c.Repo.GerarDadosDemo(r.Context(), unidades[0].ID, grades[0].ID)
+	if err != nil {
+		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
+		return
+	}
+	views.ResponderJSON(w, http.StatusOK, map[string]any{"ok": true, "gerados": total})
+}

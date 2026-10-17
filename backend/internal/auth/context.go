@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"painel-chamada-backend/internal/domain"
@@ -60,6 +61,20 @@ func responderNaoAutenticado(w http.ResponseWriter, codigo, mensagem string) {
 	w.Write([]byte(`{"error_code":"` + codigo + `","message":"` + mensagem + `"}`))
 }
 
+// sameSitePara (16/10): cookie "seguro" (HTTPS) usa SameSite=None, porque esse cenário só
+// acontece quando front e back estão em domínios DIFERENTES (ex.: frontend no Vercel falando
+// com um backend atrás de um túnel, fase de teste antes da hospedagem definitiva) — nesse
+// caso o navegador trata como requisição CROSS-SITE de verdade, e SameSite=Lax não é enviado
+// em chamadas fetch/XHR entre domínios (só em navegação de topo). Fora desse cenário (dev
+// local, front e back no mesmo host), continua Lax — não precisa de None e Lax é mais
+// restritivo/seguro por padrão.
+func sameSitePara(seguro bool) http.SameSite {
+	if seguro {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
+}
+
 func DefinirCookieSessao(w http.ResponseWriter, token string, duracao time.Duration, seguro bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     NomeCookieSessao,
@@ -67,7 +82,7 @@ func DefinirCookieSessao(w http.ResponseWriter, token string, duracao time.Durat
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   seguro,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSitePara(seguro),
 		Expires:  time.Now().Add(duracao),
 	})
 }
@@ -79,7 +94,21 @@ func RemoverCookieSessao(w http.ResponseWriter, seguro bool) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   seguro,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSitePara(seguro),
 		MaxAge:   -1,
 	})
+}
+
+// RequisicaoViaHTTPS detecta se ESTA requisição específica chegou por HTTPS — direto (r.TLS)
+// ou atrás de um proxy/túnel que termina TLS e repassa em texto puro pro nosso processo
+// (cabeçalho `X-Forwarded-Proto`, convenção padrão desses proxies — inclui o cloudflared
+// usado na fase de teste com túnel, 16/10). Combinado com a flag estática de ambiente
+// (CookieSeguro) em vez de substituí-la: permite o MESMO processo atender ao mesmo tempo (a)
+// acesso local direto, HTTP puro, sem túnel, e (b) acesso via túnel HTTPS — sem precisar
+// escolher um modo fixo no boot nem rodar dois processos.
+func RequisicaoViaHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

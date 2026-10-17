@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Plus, Save } from "lucide-react";
+import { Plus, Save, Sparkles } from "lucide-react";
 import { api, ApiError, type DetalhePrefeitura } from "../../../api";
 import { useNotificar } from "../../../componentes/Notificacoes";
+
+// Prefeitura de teste da integração SSO (ver skill auth-conecta-cidades) — a única que ganha
+// o botão "Gerar dados de demonstração" (16/10, pedido explícito: "só a Smartândia"). O
+// backend tem a mesma trava (PostGerarDadosDemo recusa qualquer outra prefeitura) — isso
+// aqui é só pra nem oferecer o botão numa prefeitura real, não é a única defesa.
+const SLUG_PREFEITURA_DEMO = "smartandia";
 
 // Aba "Settings" da configuração da prefeitura (22/09, reorganizada em abas 23/09) — nome,
 // as duas cores de identidade (destaque + clara, ver skill identidade-visual) e a lista de
@@ -14,13 +20,16 @@ export default function PrefeituraSettings() {
 
   const [detalhe, setDetalhe] = useState<DetalhePrefeitura | null>(null);
   const [nome, setNome] = useState("");
-  const [corDestaque, setCorDestaque] = useState("#146c8c");
-  const [corClara, setCorClara] = useState("#e4f1f5");
+  // Default alinhado ao schema (migration 000009) e ao token --cor-primaria do design
+  // system do Conecta Cidades — só aparece até a resposta real de `api.prefeitura` chegar.
+  const [corDestaque, setCorDestaque] = useState("#d52e5f");
+  const [corClara, setCorClara] = useState("#fae6ec");
   const [salvando, setSalvando] = useState(false);
 
   const [nomeSecretaria, setNomeSecretaria] = useState("");
   const [siglaSecretaria, setSiglaSecretaria] = useState("");
   const [criandoSecretaria, setCriandoSecretaria] = useState(false);
+  const [gerandoDemo, setGerandoDemo] = useState(false);
 
   const carregar = useCallback(async (id: string) => {
     const d = await api.prefeitura(id);
@@ -66,10 +75,37 @@ export default function PrefeituraSettings() {
     }
   }
 
+  async function gerarDadosDemo() {
+    if (!prefeituraId) return;
+    setGerandoDemo(true);
+    try {
+      const resultado = await api.gerarDadosDemo(prefeituraId);
+      notificar(`${resultado.gerados} agendamentos de demonstração gerados.`);
+    } catch (err) {
+      notificar(err instanceof ApiError ? err.message : "Erro ao gerar dados de demonstração.", "erro");
+    } finally {
+      setGerandoDemo(false);
+    }
+  }
+
   if (!detalhe) return <p>Carregando…</p>;
 
   return (
     <>
+      {detalhe.prefeitura.slug === SLUG_PREFEITURA_DEMO && (
+        <section className="cartao">
+          <h3>Dados de demonstração</h3>
+          <p className="dica">
+            Gera uma fila de agendamentos sintéticos pro dia de hoje (nomes e CPF fictícios,
+            nunca de cidadão real) — a fila funciona de verdade, pra demonstrar o sistema sem
+            depender de planilha importada. Rodar de novo substitui o lote anterior.
+          </p>
+          <button onClick={gerarDadosDemo} disabled={gerandoDemo}>
+            <Sparkles size={16} /> {gerandoDemo ? "Gerando…" : "Gerar dados de demonstração"}
+          </button>
+        </section>
+      )}
+
       <section className="cartao">
         <h3>Identidade</h3>
         <p className="dica">Nome e as duas cores usadas em toda a interface desta prefeitura — a de destaque (ações, links) e a mais clara (fundo, cabeçalho de tabela).</p>

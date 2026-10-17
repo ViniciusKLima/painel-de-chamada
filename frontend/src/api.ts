@@ -140,9 +140,11 @@ export type TipoGuiche = "guiche" | "sala";
 // ocupadoPorUsuarioId/ocupadoPorNome (22/09) — quem está atendendo nesse guichê agora, em
 // tempo real (heartbeat, ver skill regras-negocio-fila). Nulo = livre. Um valor "velho"
 // (sem heartbeat recente) já vem nulo do backend — o frontend nunca precisa calcular isso.
+// unidadeId (16/10, era gradeId) — guichê pertence ao local físico, compartilhado por todas
+// as grades dele (ver skill regras-negocio-fila, "guichê é por unidade").
 export interface Guiche {
   id: string;
-  gradeId: string;
+  unidadeId: string;
   nome: string;
   ativo: boolean;
   tipo: TipoGuiche;
@@ -492,6 +494,11 @@ export const api = {
     request<Prefeitura>(`/api/v1/prefeituras/${prefeituraId}`, { method: "PATCH", body: JSON.stringify(dados) }),
   criarSecretaria: (prefeituraId: string, nome: string, sigla: string) =>
     request<Secretaria>(`/api/v1/prefeituras/${prefeituraId}/secretarias`, { method: "POST", body: JSON.stringify({ nome, sigla }) }),
+  // Só funciona pra prefeitura "Smartândia" (trava no backend) — gera um lote de
+  // agendamentos sintéticos, mas com mecânica real, pra demonstrar o sistema sem depender
+  // de planilha real importada nem expor dado de cidadão de verdade (16/10).
+  gerarDadosDemo: (prefeituraId: string) =>
+    request<{ ok: boolean; gerados: number }>(`/api/v1/prefeituras/${prefeituraId}/demo/gerar`, { method: "POST" }),
   criarGestor: (secretariaId: string, dados: { nome: string; email: string; senha: string }) =>
     request<UsuarioInterno>(`/api/v1/secretarias/${secretariaId}/gestores`, { method: "POST", body: JSON.stringify(dados) }),
   criarFuncionario: (unidadeId: string, dados: { nome: string; email: string; senha: string; papel: "atendente" | "recepcionista"; gradeIds: string[] }) =>

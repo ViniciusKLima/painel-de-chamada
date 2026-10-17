@@ -21,12 +21,17 @@ export default function Cabecalho({
   papel,
   unidadeNome,
   prefeituraNome,
+  guiche,
   acoes,
 }: {
   nome: string;
   papel: string;
   unidadeNome: string;
   prefeituraNome?: string | null;
+  /** Guichê(s) já resolvido(s) de quem está logado — aparece como "- Guichê X" logo depois
+   * do nome (16/10, pedido direto: "atendente: nome - guichê x"). Opcional porque nem todo
+   * papel tem guichê (recepção, gestor, admin) nem todo atendente já escolheu um. */
+  guiche?: string | null;
   acoes: ReactNode;
 }) {
   return (
@@ -39,7 +44,10 @@ export default function Cabecalho({
         <div className="cabecalho-acoes">{acoes}</div>
       </header>
       <div className="subcabecalho">
-        <span className="subcabecalho-usuario">{papel}: {nome}</span>
+        <span className="subcabecalho-usuario">
+          {papel}: {nome}
+          {guiche && ` - ${guiche}`}
+        </span>
         <span className="subcabecalho-unidade">{unidadeNome}</span>
       </div>
     </>
