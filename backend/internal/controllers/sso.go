@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,19 @@ type corpoSessaoPortal struct {
 	Credencial string `json:"credencial"`
 }
 
+// ssoErro loga no stdout do servidor (achado real, 23/10: diagnosticar um login via portal
+// que falha era só "tenta de novo e vê qual tela aparece" — sem log nenhum do lado do
+// servidor, cada etapa de validação era uma caixa preta) e devolve ao CLIENTE só a mensagem
+// pública genérica — o `detalheInterno` (texto de erro de biblioteca, nome de role não
+// reconhecida etc.) fica só no log do servidor. ACHADO POR REVISÃO DE SEGURANÇA (23/10,
+// mesmo dia): a 1ª versão desta função concatenava `err.Error()` direto na mensagem pública
+// em vários pontos — informação interna (detalhe de validação de JWT, de uma chamada HTTP
+// pra Conecta Cidades etc.) foi pra fora, no corpo da resposta HTTP, não só no log.
+func ssoErro(w http.ResponseWriter, status int, codigo, mensagemPublica, detalheInterno, emissor string) {
+	log.Printf("sso: falhou em %q (emissor=%q, status=%d): %s", codigo, emissor, status, detalheInterno)
+	views.ResponderErro(w, status, codigo, mensagemPublica)
+}
+
 // PostSessaoPortal: POST /api/v1/sessao/portal — login integrado via SSO real da Conecta
 // Cidades (22/10, ver skill auth-conecta-cidades pro desenho completo e as fontes oficiais).
 // O frontend lê o `?token=` da URL (vindo do portal/painel administrativo da prefeitura) e
@@ -27,7 +41,7 @@ type corpoSessaoPortal struct {
 func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	var corpo corpoSessaoPortal
 	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil || strings.TrimSpace(corpo.Credencial) == "" {
-		views.ResponderErro(w, http.StatusUnauthorized, "identidade_ausente", "credencial do portal ausente")
+		ssoErro(w, http.StatusUnauthorized, "identidade_ausente", "credencial do portal ausente", "corpo da requisicao sem credencial valida", "")
 		return
 	}
 	// Sem a credencial de introspecção OU sem a audiência configurada, o login via portal
@@ -37,14 +51,14 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	// token válido emitido pra OUTRA aplicação integrada ao mesmo emissor seria aceito aqui
 	// também — achado por revisão de segurança, 22/10).
 	if c.ConectaIntrospectToken == "" || c.ConectaAudiencia == "" {
-		views.ResponderErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "login via portal nao configurado neste ambiente")
+		ssoErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "login via portal nao configurado neste ambiente", "CONECTA_INTROSPECT_API_TOKEN ou CONECTA_AUDIENCIA vazios", "")
 		return
 	}
 
 	// 1-2. Ler o iss SEM confiar, só pra saber contra qual prefeitura/JWKS checar depois.
 	emissor, err := auth.LerEmissorSemVerificar(corpo.Credencial)
 	if err != nil {
-		views.ResponderErro(w, http.StatusUnauthorized, "identidade_invalida", "credencial invalida")
+		ssoErro(w, http.StatusUnauthorized, "identidade_invalida", "credencial invalida", err.Error(), "")
 		return
 	}
 
@@ -53,7 +67,7 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	// resolução de secretaria/unidade por tenant (ver mapeamento_externo.go).
 	prefeitura, err := c.Repo.BuscarPrefeituraPorIssuer(r.Context(), emissor)
 	if err != nil {
-		views.ResponderErro(w, http.StatusForbidden, "prefeitura_nao_atendida", "prefeitura nao cadastrada pra login via portal")
+		ssoErro(w, http.StatusForbidden, "prefeitura_nao_atendida", "prefeitura nao cadastrada pra login via portal", err.Error(), emissor)
 		return
 	}
 
@@ -61,9 +75,9 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	claims, err := auth.VerificarCredencialPortal(r.Context(), c.ChavesPublicas, emissor, c.ConectaAudiencia, corpo.Credencial)
 	if err != nil {
 		if errors.Is(err, auth.ErrJWKSIndisponivel) {
-			views.ResponderErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "nao foi possivel validar a credencial agora")
+			ssoErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "nao foi possivel validar a credencial agora", err.Error(), emissor)
 		} else {
-			views.ResponderErro(w, http.StatusUnauthorized, "identidade_invalida", "credencial invalida ou expirada")
+			ssoErro(w, http.StatusUnauthorized, "identidade_invalida", "credencial invalida ou expirada", err.Error(), emissor)
 		}
 		return
 	}
@@ -72,7 +86,7 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	// token forjado entregaria de graça o formato esperado pra quem não devia saber).
 	papel, reconhecido := auth.MapearPapel(claims.Roles)
 	if !reconhecido {
-		views.ResponderErro(w, http.StatusForbidden, "papel_sem_acesso", "papel do servidor nao reconhecido")
+		ssoErro(w, http.StatusForbidden, "papel_sem_acesso", "papel do servidor nao reconhecido", "roles="+strings.Join(claims.Roles, ","), emissor)
 		return
 	}
 	// Admin NUNCA é concedido via SSO (achado por revisão de segurança, 22/10): o nosso
@@ -82,12 +96,12 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	// GLOBAL, inclusive a dado real de outras prefeituras. Admin continua só manual (login
 	// por senha, criado direto no banco/por outro admin) — nunca auto-provisionado aqui.
 	if papel == domain.PapelAdmin {
-		views.ResponderErro(w, http.StatusForbidden, "papel_sem_acesso", "admin nao pode ser concedido via login integrado")
+		ssoErro(w, http.StatusForbidden, "papel_sem_acesso", "admin nao pode ser concedido via login integrado", "papel=admin", emissor)
 		return
 	}
 
 	if strings.TrimSpace(claims.Subject) == "" {
-		views.ResponderErro(w, http.StatusUnauthorized, "credencial_sem_identificador", "token sem sub")
+		ssoErro(w, http.StatusUnauthorized, "credencial_sem_identificador", "token sem identificador utilizavel", "token sem sub", emissor)
 		return
 	}
 	email := strings.TrimSpace(claims.Email)
@@ -95,7 +109,7 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 		email = strings.TrimSpace(claims.PreferredUsername)
 	}
 	if email == "" {
-		views.ResponderErro(w, http.StatusUnauthorized, "credencial_sem_identificador", "token sem email utilizavel")
+		ssoErro(w, http.StatusUnauthorized, "credencial_sem_identificador", "token sem identificador utilizavel", "token sem email nem preferred_username", emissor)
 		return
 	}
 
@@ -103,9 +117,9 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	// Confirma uso único (o token torna-se inválido pra qualquer chamada seguinte).
 	if err := auth.Introspect(r.Context(), emissor, c.ConectaIntrospectToken, corpo.Credencial); err != nil {
 		if errors.Is(err, auth.ErrIntrospectInativo) {
-			views.ResponderErro(w, http.StatusUnauthorized, "identidade_invalida", "token ja utilizado ou expirado")
+			ssoErro(w, http.StatusUnauthorized, "identidade_invalida", "token ja utilizado ou expirado", err.Error(), emissor)
 		} else {
-			views.ResponderErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "nao foi possivel confirmar a credencial agora")
+			ssoErro(w, http.StatusServiceUnavailable, "identidade_indisponivel", "nao foi possivel confirmar a credencial agora", err.Error(), emissor)
 		}
 		return
 	}
@@ -121,11 +135,11 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 		unidadeID, err = c.Repo.ResolverUnidadePorExternalIDs(r.Context(), prefeitura.ID, claims.UnitIDs)
 	}
 	if err != nil {
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
+		ssoErro(w, http.StatusInternalServerError, "erro_interno", "erro interno", err.Error(), emissor)
 		return
 	}
 	if papel != domain.PapelAdmin && secretariaID == nil && unidadeID == nil {
-		views.ResponderErro(w, http.StatusForbidden, "vinculo_nao_encontrado", "secretaria/unidade do servidor nao mapeada")
+		ssoErro(w, http.StatusForbidden, "vinculo_nao_encontrado", "secretaria/unidade do servidor nao mapeada", "department_ids/unit_ids nao resolveram nenhum vinculo", emissor)
 		return
 	}
 
@@ -146,23 +160,24 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrVinculoExternoConflitante) {
-			views.ResponderErro(w, http.StatusForbidden, "credencial_sem_identificador", "e-mail ja vinculado a outra identidade")
+			ssoErro(w, http.StatusForbidden, "credencial_sem_identificador", "e-mail ja vinculado a outra identidade", "vinculo externo conflitante", emissor)
 			return
 		}
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
+		ssoErro(w, http.StatusInternalServerError, "erro_interno", "erro interno", err.Error(), emissor)
 		return
 	}
 	if !usuario.Ativo {
-		views.ResponderErro(w, http.StatusForbidden, "usuario_desativado", "acesso revogado")
+		ssoErro(w, http.StatusForbidden, "usuario_desativado", "acesso revogado", "usuario inativo", emissor)
 		return
 	}
 
 	token, err := auth.CriarSessao(c.SessaoSegredo, usuario.ID, c.SessaoDuracao)
 	if err != nil {
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", "falha ao criar sessao")
+		ssoErro(w, http.StatusInternalServerError, "erro_interno", "erro interno", "falha ao criar sessao: "+err.Error(), emissor)
 		return
 	}
 	_ = c.Repo.AtualizarUltimoAcesso(r.Context(), usuario.ID)
 	auth.DefinirCookieSessao(w, token, c.SessaoDuracao, c.CookieSeguro || auth.RequisicaoViaHTTPS(r))
+	log.Printf("sso: login ok (emissor=%q, papel=%q, usuario=%q)", emissor, papel, usuario.ID)
 	views.ResponderJSON(w, http.StatusOK, c.usuarioParaJSON(r.Context(), usuario))
 }

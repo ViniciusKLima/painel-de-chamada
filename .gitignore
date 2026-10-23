@@ -28,3 +28,6 @@ agendamentos-*.csv
 # Estado de execução do agente (sessão/PID), não é conteúdo do projeto — `.claude/skills/`
 # continua versionado normalmente, é documentação de produto real.
 .claude/scheduled_tasks.lock
+
+# Logs locais do backend (diagnóstico, 23/10 — nunca versionar)
+backend/*.log
