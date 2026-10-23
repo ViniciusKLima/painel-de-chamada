@@ -142,6 +142,7 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 		Papel:           papel,
 		SecretariaID:    secretariaID,
 		UnidadeID:       unidadeID,
+		PrefeituraID:    prefeitura.ID,
 	})
 	if err != nil {
 		if errors.Is(err, repository.ErrVinculoExternoConflitante) {

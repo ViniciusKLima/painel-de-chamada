@@ -23,10 +23,35 @@ func escanearLinhaUsuario(row interface {
 	return row.Scan(&u.ID, &u.SecretariaID, &u.UnidadeID, &u.Nome, &u.Email, &u.Papel, &u.ExternalSub, &u.ExternalIssuer, &u.Ativo, &u.UltimoAcessoEm)
 }
 
-// Login busca por email direto, sem escopo nenhum — usuarios.email é único globalmente
-// desde a introdução do admin (22/09, ver skill auth-login-mvp).
-func (r *Repo) BuscarUsuarioPorEmail(ctx context.Context, email string) (*domain.Usuario, error) {
-	row := r.Pool.QueryRow(ctx, `select `+colunasUsuario+` from usuarios where email = $1 limit 1`, email)
+// buscarUsuarioPorEmailNaPrefeitura: usada só pelo fallback por e-mail do login via SSO
+// (UpsertUsuarioPortal) — ACHADO POR REVISÃO DE SEGURANÇA (22/10, mesmo dia da implementação):
+// `usuarios.email` é único globalmente, mas isso NÃO significa que qualquer conta com aquele
+// e-mail pode ser vinculada a qualquer token — sem escopar por prefeitura, um e-mail
+// verificado por QUALQUER emissor confiado (ex: a Smartândia de teste) conseguia rebindar
+// `external_sub`/`secretaria_id`/`unidade_id` de uma conta pré-provisionada de OUTRA
+// prefeitura pra si, sequestrando o registro e travando o dono legítimo fora na próxima vez
+// (vira `ErrVinculoExternoConflitante` pra ele). Por isso aqui: (1) `papel <> 'admin'` — conta
+// global nunca tem prefeitura pra comparar, e nunca deve ser alvo de bind automático; (2) o
+// `coalesce` junta os dois caminhos possíveis até uma prefeitura (gestor via secretaria_id
+// direto, atendente/recepcionista via unidade_id -> secretaria) e exige que seja EXATAMENTE a
+// prefeitura já resolvida pelo `iss` do token atual — uma conta de outra prefeitura (ou uma
+// pré-provisionada sem nenhum vínculo ainda, prefeitura_id nulo nos dois) nunca bate.
+func (r *Repo) buscarUsuarioPorEmailNaPrefeitura(ctx context.Context, email, prefeituraID string) (*domain.Usuario, error) {
+	// Falha fechado (mesmo padrão já usado pra CONECTA_AUDIENCIA vazio): sem uma prefeitura
+	// resolvida não há com o que comparar, então o fallback simplesmente não acha nada — nunca
+	// o contrário (reinterpretar "sem escopo" como "qualquer escopo serve").
+	if prefeituraID == "" {
+		return nil, ErrNaoEncontrado
+	}
+	row := r.Pool.QueryRow(ctx, `
+		select u.id, u.secretaria_id, u.unidade_id, u.nome, u.email, u.papel, u.external_sub, u.external_issuer, u.ativo, u.ultimo_acesso_em
+		from usuarios u
+		left join secretarias s1 on s1.id = u.secretaria_id
+		left join unidades un on un.id = u.unidade_id
+		left join secretarias s2 on s2.id = un.secretaria_id
+		where u.email = $1 and u.papel <> 'admin' and coalesce(s1.prefeitura_id, s2.prefeitura_id) = $2
+		limit 1
+	`, email, prefeituraID)
 	return escanearUsuario(row)
 }
 
@@ -418,6 +443,9 @@ func (r *Repo) BuscarUsuarioPorExternalSub(ctx context.Context, issuer, external
 // gravar/atualizar. SecretariaID/UnidadeID já vêm resolvidos (via mapeamento_externo) pelo
 // controller — este repository não decide isso. EmailVerificado (22/10, revisão de
 // segurança) controla se o fallback de busca por e-mail pode rodar — ver UpsertUsuarioPortal.
+// PrefeituraID (22/10, revisão de segurança) é a prefeitura já resolvida pelo `iss` do token —
+// escopa o próprio fallback por e-mail, pra não rebindar uma conta de outra prefeitura (ver
+// buscarUsuarioPorEmailNaPrefeitura).
 type DadosPortal struct {
 	ExternalIssuer  string
 	ExternalSub     string
@@ -427,6 +455,7 @@ type DadosPortal struct {
 	Papel           domain.Papel
 	SecretariaID    *string
 	UnidadeID       *string
+	PrefeituraID    string
 }
 
 // UpsertUsuarioPortal implementa o passo 6 da skill auth-conecta-cidades (seção 4): busca por
@@ -436,12 +465,17 @@ type DadosPortal struct {
 // — ver aviso abaixo); continua sem achar = cria, sem aprovação prévia, com `senha_hash`
 // nulo (login por SSO não usa senha).
 //
-// Duas travas de segurança no fallback por e-mail (22/10, revisão de segurança):
+// Travas de segurança no fallback por e-mail (22/10, revisão de segurança — a 3ª veio de uma
+// segunda rodada de revisão, depois do commit/push da primeira):
 //  1. só roda se `d.EmailVerificado` — um e-mail não confirmado pelo próprio emissor não é
 //     base confiável pra herdar o acesso de uma conta local já existente.
 //  2. se o usuário achado por e-mail já tiver um vínculo externo DIFERENTE gravado, a função
 //     recusa (`ErrVinculoExternoConflitante`) em vez de sobrescrever silenciosamente —
 //     nunca "rebinda" uma identidade externa já estabelecida.
+//  3. a própria busca por e-mail é escopada pela prefeitura já resolvida (ver
+//     `buscarUsuarioPorEmailNaPrefeitura`) e nunca acha conta `admin` — sem isso, um e-mail
+//     verificado por QUALQUER prefeitura cadastrada conseguia sequestrar/realocar uma conta
+//     pré-provisionada de OUTRA prefeitura (trancando o dono legítimo fora na vez seguinte).
 //
 // Usuário desativado não é recriado nem reativado automaticamente aqui — a função só
 // atualiza os dados; quem decide se o acesso é permitido (checando `Ativo`) é o controller,
@@ -452,7 +486,7 @@ func (r *Repo) UpsertUsuarioPortal(ctx context.Context, d DadosPortal) (*domain.
 	// sem isso, `existente` continua nil e `err` continua ErrNaoEncontrado, caindo direto no
 	// INSERT abaixo, exatamente como se o fallback nem existisse.
 	if errors.Is(err, ErrNaoEncontrado) && d.EmailVerificado {
-		existente, err = r.BuscarUsuarioPorEmail(ctx, d.Email)
+		existente, err = r.buscarUsuarioPorEmailNaPrefeitura(ctx, d.Email, d.PrefeituraID)
 		if err == nil && existente.ExternalSub != nil &&
 			(*existente.ExternalSub != d.ExternalSub || existente.ExternalIssuer == nil || *existente.ExternalIssuer != d.ExternalIssuer) {
 			return nil, ErrVinculoExternoConflitante
