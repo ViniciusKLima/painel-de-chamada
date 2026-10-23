@@ -76,14 +76,26 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const corpo = await resposta.json().catch(() => null);
   if (!resposta.ok) {
-    if (resposta.status === 401 && path !== "/api/v1/sessao") {
+    // `/sessao` e `/sessao/portal` ficam de fora deste vigia nos dois ramos (23/10, bug real
+    // encontrado em produção) — os dois são pontos de ENTRADA (busca inicial de sessão e
+    // login via SSO), nunca uma ação de uma tela já autenticada. Um 401/403 ali não significa
+    // "sessão trocada por outra aba" (não existe sessão prévia nenhuma pra comparar) — é
+    // sempre o motivo genuíno da própria tentativa (token inválido, papel bloqueado etc.).
+    // Faltando essa exclusão em `/sessao/portal`, um admin tentando entrar via portal (papel
+    // bloqueado por design, ver auth-conecta-cidades) via 403 `papel_sem_acesso` disparava
+    // `confirmarIdentidadeAindaValida` → via `GET /sessao` sem cookie nenhum → 401 →
+    // `irParaLogin("expirada")` — um `window.location.href` de verdade, que sobrescrevia a
+    // tela ANTES do usuário conseguir ler a mensagem real ("admin nao pode ser concedido via
+    // login integrado"), substituída por "Sua sessão expirou." (enganoso: nunca houve sessão).
+    const ehEntradaDeSessao = path === "/api/v1/sessao" || path === "/api/v1/sessao/portal";
+    if (resposta.status === 401 && !ehEntradaDeSessao) {
       // 401 em qualquer chamada (não só na busca inicial de sessão) = sessão realmente
       // ausente/expirada/desativada — antes disso só a busca inicial de cada tela tratava
       // 401, deixando qualquer ação disparada pelo usuário depois disso sem nenhum
       // redirecionamento (só um toast de erro cru, a tela ficava travada precisando de
       // logout manual).
       irParaLogin("expirada");
-    } else if (resposta.status === 403 && CODIGOS_POSSIVEL_TROCA_DE_SESSAO.has(corpo?.error_code) && path !== "/api/v1/sessao") {
+    } else if (resposta.status === 403 && CODIGOS_POSSIVEL_TROCA_DE_SESSAO.has(corpo?.error_code) && !ehEntradaDeSessao) {
       void confirmarIdentidadeAindaValida();
     }
     throw new ApiError(resposta.status, corpo?.error_code ?? "erro", corpo?.message ?? `Erro ${resposta.status}`);
