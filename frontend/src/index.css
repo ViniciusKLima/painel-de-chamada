@@ -375,23 +375,22 @@ form.cartao button {
   margin-top: var(--espaco-2);
 }
 
-/* Tela "acesse pelo portal" (22/10) — único estado da tela de login fora do carregamento via
-   SSO (ver Login.tsx): substituiu tanto o antigo form de email/senha quanto os botões de
-   acesso rápido de rodadas anteriores (`.acessos-rapidos`/`.acesso-secundario`, removidas
-   daqui por ficarem órfãs — login por senha não existe mais, ver skill auth-conecta-cidades).
-   Layout lado a lado (empilha em mobile via a regra geral de `.tela-central`/flex-wrap). */
+/* Tela "acesse pelo portal" (22/10, redesenhada na mesma data depois do feedback "ficou
+   estranho, só ícone e texto") — único estado da tela de login fora do carregamento via SSO
+   (ver Login.tsx): substituiu tanto o antigo form de email/senha quanto os botões de acesso
+   rápido de rodadas anteriores. Layout em coluna — a TV ilustrada é a protagonista, texto
+   centrado embaixo — ao contrário da 1ª versão (ícone pequeno ao lado do texto). */
 .acesso-portal {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--espaco-5);
-  max-width: 560px;
-  flex-wrap: wrap;
-  justify-content: center;
-  text-align: left;
+  max-width: 460px;
+  text-align: center;
 }
 
 .acesso-portal-texto {
-  max-width: 340px;
+  max-width: 400px;
 }
 
 .acesso-portal-texto h1 {
@@ -404,37 +403,106 @@ form.cartao button {
   color: var(--cor-texto-suave);
 }
 
-/* "Painel de TV sem sinal" (pedido explícito do dono do produto) — reaproveita o tema do
-   próprio produto (um sistema de painel de chamada) até no aviso de acesso. Ruído estático
-   animado via CSS puro (sem imagem/GIF): duas camadas de repeating-gradient com jitter em
-   `steps()` pra ficar "chiando", não suave — é disso que vem a sensação de estática de TV. */
-.tv-sem-sinal {
-  flex-shrink: 0;
-  width: 160px;
-  height: 120px;
-  border-radius: var(--raio-cartao);
-  background:
-    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.07) 0px, rgba(255, 255, 255, 0.07) 1px, transparent 1px, transparent 3px),
-    repeating-linear-gradient(170deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 2px, transparent 2px, transparent 5px),
-    linear-gradient(135deg, #1b2730, #0a141a);
-  background-size: 7px 7px, 11px 11px, 100% 100%;
+/* "TV sem sinal" em 3D de verdade (pedido explícito do dono do produto, 2ª rodada: a 1ª
+   versão era só um ícone de TV solto sobre um retângulo com estática — "ficou estranho,
+   somente o ícone e o texto"; pedido explícito de uma TV "de fato mais elaborada e maior",
+   depois "3D, sem ser muito simples"). Construída com `transform-style: preserve-3d` de
+   verdade (não é um truque 2D com sombra) — 3 faces reais (frente/lado/topo), cada uma
+   posicionada com a técnica clássica de "caixa 3D em CSS": cada face centralizada
+   (`translate(-50%,-50%)`) e empurrada ao longo do seu próprio eixo Z local por METADE da
+   dimensão da caixa naquele eixo (`translateZ`), com a cena inteira rotacionada uma vez só
+   (`.tv-caixa`) — por isso só 3 faces bastam pra ilusão: a rotação escolhida nunca revela as
+   outras 3 (fundo/esquerda/baixo), então nem precisam existir. O chiado estático (mesma
+   técnica de `repeating-linear-gradient` + `steps()` de antes) corre DENTRO de `.tv-tela`
+   agora — um retângulo recuado no vidro, não mais o corpo inteiro do "ícone". */
+.tv-cena {
   position: relative;
-  overflow: hidden;
+  width: 300px;
+  height: 230px;
+  perspective: 1000px;
+}
+
+.tv-caixa {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  width: 260px;
+  height: 170px;
+  margin-left: -130px;
+  transform-style: preserve-3d;
+  transform: rotateX(-13deg) rotateY(26deg);
+}
+
+.tv-face {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: var(--raio-pequeno);
+}
+
+.tv-face-frente {
+  width: 260px;
+  height: 170px;
+  transform: translate(-50%, -50%) translateZ(27px);
+  background: linear-gradient(145deg, #30414a 0%, #19282f 55%, #0e1a1f 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: rgba(255, 255, 255, 0.55);
-  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.6), 0 10px 26px rgba(14, 46, 56, 0.22);
-  animation: tv-chiar 0.5s steps(5) infinite;
+  gap: 10px;
+  padding: 16px 16px 12px;
 }
 
-.tv-sem-sinal-legenda {
-  font-size: 0.68rem;
+.tv-face-lado {
+  width: 54px;
+  height: 170px;
+  transform: translate(-50%, -50%) rotateY(90deg) translateZ(130px);
+  background: linear-gradient(180deg, #0c1619 0%, #060d0f 100%);
+}
+
+.tv-face-topo {
+  width: 260px;
+  height: 54px;
+  transform: translate(-50%, -50%) rotateX(-90deg) translateZ(85px);
+  background: linear-gradient(180deg, #4d6169 0%, #34464d 100%);
+}
+
+/* A tela de vidro em si, recuada dentro da face frontal — é aqui (não no corpo da TV) que o
+   chiado roda. */
+.tv-tela {
+  width: 100%;
+  flex: 1;
+  border-radius: var(--raio-pequeno);
+  position: relative;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.09) 0px, rgba(255, 255, 255, 0.09) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(170deg, rgba(255, 255, 255, 0.06) 0px, rgba(255, 255, 255, 0.06) 2px, transparent 2px, transparent 5px),
+    linear-gradient(135deg, #1b2730, #060b0e);
+  background-size: 7px 7px, 11px 11px, 100% 100%;
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.75), inset 0 0 0 2px rgba(0, 0, 0, 0.4);
+  animation: tv-chiar 0.5s steps(5) infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Reflexo de vidro — uma faixa diagonal clara bem sutil, só pra reforçar "isso é uma
+   superfície de vidro curva", não é interativo nem anima. */
+.tv-tela-reflexo {
+  position: absolute;
+  inset: -20% -40%;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.1) 0%, transparent 28%, transparent 72%, rgba(255, 255, 255, 0.05) 100%);
+  pointer-events: none;
+}
+
+.tv-tela-legenda {
+  position: relative;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
 }
 
 @keyframes tv-chiar {
@@ -446,9 +514,133 @@ form.cartao button {
   }
 }
 
+/* Painel de controle — faixa fina abaixo da tela, com a luz de espera e 2 botões decorativos
+   (nenhum clicável, é só pra vender "isto é um aparelho de TV" de verdade). */
+.tv-painel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+  padding: 0 4px;
+}
+
+.tv-luz {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cor-primaria);
+  box-shadow: 0 0 6px 1px var(--cor-primaria);
+  animation: tv-luz-pulsar 2.4s ease-in-out infinite;
+}
+
+@keyframes tv-luz-pulsar {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.tv-botao {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #44565e, #222f34);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  margin-left: auto;
+}
+
+.tv-botao + .tv-botao {
+  margin-left: 0;
+}
+
+/* Antenas — dois bastões finos "metálicos" (gradiente claro-escuro-claro fakeando um cilindro)
+   com uma bolinha na ponta, só decorativas, posicionadas em 2D por cima da cena 3D (a
+   inclinação da caixa é pequena o suficiente pra não precisar que elas também existam no
+   espaço 3D de verdade). */
+.tv-antena {
+  position: absolute;
+  top: 14px;
+  width: 4px;
+  height: 64px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8a9aa0, #2f3c41 45%, #8a9aa0);
+  z-index: 1;
+}
+
+.tv-antena::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #cfd9db, #5a6b70);
+}
+
+.tv-antena-esquerda {
+  left: 92px;
+  transform: rotate(-28deg);
+  transform-origin: bottom center;
+}
+
+.tv-antena-direita {
+  left: 198px;
+  transform: rotate(28deg);
+  transform-origin: bottom center;
+}
+
+/* Pescoço + pé — a base que "sustenta" a TV, flat 2D mesmo (a ilusão 3D já está feita pelo
+   corpo acima; a base só precisa sugerir apoio). */
+.tv-pescoco {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  width: 18px;
+  height: 14px;
+  margin-left: -9px;
+  background: linear-gradient(180deg, #1b2a30, #0e1a1f);
+  z-index: 1;
+}
+
+.tv-pe {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: 92px;
+  height: 14px;
+  margin-left: -46px;
+  border-radius: var(--raio-pequeno);
+  background: linear-gradient(180deg, #30414a, #16232a);
+  z-index: 1;
+}
+
+/* Sombra de "piso" — reforça que a TV está apoiada em algo, não flutuando sem contexto. */
+.tv-sombra-piso {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  width: 180px;
+  height: 20px;
+  margin-left: -90px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(14, 46, 56, 0.22), transparent 72%);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tv-sem-sinal {
+  .tv-tela,
+  .tv-luz {
     animation: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .tv-cena {
+    transform: scale(0.82);
+    transform-origin: top center;
+    margin-bottom: -40px;
   }
 }
 

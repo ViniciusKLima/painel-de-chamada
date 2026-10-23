@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Tv } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { resetarTema } from "../../tema";
 
@@ -76,13 +75,35 @@ export default function Login() {
   // sem token, ou um token que falhou (expirado, inválido, papel sem acesso etc. — `erro`
   // traz o motivo específico quando veio de uma tentativa real). Visual de "painel de TV sem
   // sinal" — pedido explícito do dono do produto — reforça o tema do produto em si (um
-  // sistema de painel de chamada) até no próprio aviso de acesso.
+  // sistema de painel de chamada) até no próprio aviso de acesso. TV ilustrada em 3D de
+  // verdade (perspective + preserve-3d, 3 faces reais — frente/lado/topo — não só um ícone
+  // com um retângulo atrás, 2ª rodada de ajuste depois do feedback de que ficou "estranho,
+  // só ícone e texto"), com o chiado estático correndo DENTRO da tela da TV, não no corpo
+  // inteiro. Detalhe completo das classes em index.css.
   return (
     <div className="tela-central">
       <div className="acesso-portal">
-        <div className="tv-sem-sinal" aria-hidden="true">
-          <Tv size={40} />
-          <span className="tv-sem-sinal-legenda">SEM SINAL</span>
+        <div className="tv-cena" aria-hidden="true">
+          <div className="tv-sombra-piso" />
+          <div className="tv-antena tv-antena-esquerda" />
+          <div className="tv-antena tv-antena-direita" />
+          <div className="tv-caixa">
+            <div className="tv-face tv-face-topo" />
+            <div className="tv-face tv-face-lado" />
+            <div className="tv-face tv-face-frente">
+              <div className="tv-tela">
+                <span className="tv-tela-reflexo" />
+                <span className="tv-tela-legenda">SEM SINAL</span>
+              </div>
+              <div className="tv-painel">
+                <span className="tv-luz" />
+                <span className="tv-botao" />
+                <span className="tv-botao" />
+              </div>
+            </div>
+          </div>
+          <div className="tv-pescoco" />
+          <div className="tv-pe" />
         </div>
         <div className="acesso-portal-texto">
           <h1>Acesse pelo portal da sua prefeitura</h1>
