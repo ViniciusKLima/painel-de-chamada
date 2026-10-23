@@ -403,6 +403,19 @@ form.cartao button {
   color: var(--cor-texto-suave);
 }
 
+/* Link de ação dentro de `TelaTvEstado` (ex: "Voltar pro início" na 404, 23/10) — `.dica` é
+   texto discreto/não-clicável; um link precisa de afordância de verdade. */
+.acesso-portal-link {
+  display: inline-block;
+  color: var(--cor-primaria);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.acesso-portal-link:hover {
+  text-decoration: underline;
+}
+
 /* "TV sem sinal" em 3D de verdade (pedido explícito do dono do produto, 2ª rodada: a 1ª
    versão era só um ícone de TV solto sobre um retângulo com estática — "ficou estranho,
    somente o ícone e o texto"; pedido explícito de uma TV "de fato mais elaborada e maior",

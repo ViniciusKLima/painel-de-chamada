@@ -18,6 +18,7 @@ import PrefeituraDashboard from "./telas/admin/prefeitura/PrefeituraDashboard";
 import PrefeituraUsuarios from "./telas/admin/prefeitura/PrefeituraUsuarios";
 import PrefeituraConfiguracoes from "./telas/admin/prefeitura/PrefeituraConfiguracoes";
 import PrefeituraPaineis from "./telas/admin/prefeitura/PrefeituraPaineis";
+import NaoEncontrado from "./telas/erro/NaoEncontrado";
 
 export default function App() {
   return (
@@ -49,6 +50,9 @@ export default function App() {
       {/* Central de painéis pública por unidade (23/09) — pra deixar fixo na TV do local,
           sem precisar de login de gestor. Ver skill painel-tv. */}
       <Route path="/tv/:unidadeId" element={<PaineisPublico />} />
+      {/* Catch-all 404 (23/10) — antes uma URL sem rota caía numa página em branco, sem
+          nenhum feedback. Precisa ser a ÚLTIMA rota (react-router casa em ordem). */}
+      <Route path="*" element={<NaoEncontrado />} />
     </Routes>
   );
 }

@@ -2678,6 +2678,56 @@ escrito em cima disso ainda.
 Skill `auth-login-mvp` marcada como obsoleta (mantida só como registro histórico); skill
 `auth-conecta-cidades` atualizada com a seção "Login por senha removido por completo".
 
+## TV ilustrada do login virou componente reaproveitável + 2 bugs reais de ambiente hospedado (23/10)
+
+Dois pedidos visuais em sequência e um bug relatado em produção, na mesma sessão:
+
+**TV 3D de verdade na tela de acesso via portal**: a primeira versão (22/10) era só um ícone
+`Tv` do lucide-react sobre um retângulo com estática — "ficou estranho, somente o ícone e o
+texto". Reconstruída com `transform-style: preserve-3d` de verdade (não um truque 2D): 3 faces
+reais (frente/lado/topo), cada uma centralizada e empurrada ao longo do seu eixo Z local por
+`translateZ` (técnica clássica de "caixa 3D em CSS"), com o chiado estático correndo DENTRO da
+tela recuada (`.tv-tela`), não mais no corpo inteiro. Ganhou antenas, painel de controle com
+luz pulsante (cor da marca) e 2 botões decorativos, pescoço+pé de base e uma sombra de piso.
+Pedido seguido de "3D, sem ser muito simples" — a versão final já endereçava isso.
+
+**Virou componente compartilhado** (`frontend/src/componentes/TelaTvEstado.tsx`, exporta
+`IlustracaoTV` + `TelaTvEstado`): pedido direto — "ja era bom que tivesse uma variação dessa
+tela pra quando tivesse umas outras situações de token invalido ou entao uma dessa pra erro
+404 e essas coisas no sistema, ja podemos reaproveitar". `Login.tsx` foi refatorado pra usar
+o componente (comportamento idêntico); `telas/erro/NaoEncontrado.tsx` (novo) reaproveita a
+MESMA ilustração só trocando a legenda "na tela" pra "ERRO 404" — rota catch-all
+(`path="*"`) registrada em `App.tsx`, que antes não existia (URL sem rota caía em página
+branca, sem feedback nenhum). Próxima tela de erro/estado vazio do sistema deve reaproveitar
+`TelaTvEstado` em vez de inventar um visual novo.
+
+**2 bugs reais encontrados testando o login via portal em produção** (o dono do produto
+reportou "to clicando no acesso... e nao ta reconhecendo o token" direto do portal real):
+
+1. **Túnel Cloudflare tinha caído** (de uma sessão anterior) — o backend local continuava de
+   pé, mas sem túnel o frontend hospedado na Vercel não tinha como alcançá-lo. Reiniciado
+   (`cloudflared tunnel --url http://localhost:3333`, URL nova de cada vez — ver limitação já
+   documentada em "Hospedagem temporária via túnel", 16/10) e o `VITE_API_URL` do projeto na
+   Vercel (`prj_SE3TzFCNZvrMV34DxDwrsgxgbI2I`, via MCP) atualizado pra URL nova, com um
+   redeploy forçado (mudar env var da Vercel não re-builda sozinho — Vite embute a variável em
+   tempo de BUILD, não de runtime).
+2. **Bug real, não só o túnel**: mesmo com o túnel saudável e o `VITE_API_URL` certo, a
+   chamada de `https://painel-de-chamada-kappa.vercel.app` pra `POST /sessao/portal` voltava
+   `403 origem_nao_permitida`. Causa: `backend/.env` tinha `CORS_ALLOWED_ORIGINS=` vazio — a
+   lista é checada SEMPRE (independente de `APP_ENV`, ver `cmd/api/main.go`, função `cors`),
+   então mesmo em desenvolvimento local o domínio real da Vercel nunca estava na lista
+   (só `localhost`/IP da rede nas portas do Vite entram automaticamente em modo dev). Corrigido
+   preenchendo `CORS_ALLOWED_ORIGINS=https://painel-de-chamada-kappa.vercel.app` no `.env`
+   local e reiniciando o backend. **Isso é config local, não código** — vive só no `.env`
+   desta máquina (gitignored), então se o backend for reiniciado numa máquina nova ou o `.env`
+   for recriado do `.env.example`, essa variável precisa ser preenchida de novo, manualmente,
+   senão o mesmo 403 volta.
+
+Confirmado ao vivo via curl simulando a origem real da Vercel direto contra o túnel: antes do
+fix, 403 `origem_nao_permitida`; depois, 401 `identidade_invalida` pra uma credencial de teste
+(exatamente o esperado — chegou até a validação do token, só recusou por ser inválida de
+propósito). `go build/vet/gofmt` e `tsc --noEmit`/`npm run build` limpos.
+
 ## Decisões em aberto (consolidado — atualizado 19/09)
 
 Lista única de tudo que ainda falta decidir/confirmar antes do MVP estar completo. A maioria das
