@@ -23,7 +23,15 @@ import NaoEncontrado from "./telas/erro/NaoEncontrado";
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      {/* Bug real encontrado e corrigido (23/10): a raiz do site era `<Navigate to="/login"
+          replace />` — um path LITERAL, sem a query string. O link de acesso rápido que o
+          portal da prefeitura gera aponta pra raiz (`/?token=...`, sem `/login` no caminho),
+          então esse redirect jogava o `?token=` fora ANTES do componente Login nunca chegar
+          a vê-lo: a URL virava `/login` puro, sem nada pra ler, e a tela caía direto no
+          fallback "acesse pelo portal" sem erro nenhum (porque nunca tentou nada) — o sintoma
+          relatado em produção. Renderizar `<Login />` direto na raiz, igual `/login`, elimina
+          o redirect e com ele a perda da query string. */}
+      <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="prefeituras" replace />} />
