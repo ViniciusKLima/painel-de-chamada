@@ -511,5 +511,19 @@ func (r *Repo) UpsertUsuarioPortal(ctx context.Context, d DadosPortal) (*domain.
 		values ($1, $2, $3, $4, $5, $6, $7, true, now())
 		returning `+colunasUsuario,
 		d.SecretariaID, d.UnidadeID, strings.TrimSpace(d.Nome), strings.TrimSpace(d.Email), d.Papel, d.ExternalSub, d.ExternalIssuer)
-	return escanearUsuario(row)
+	u, err := escanearUsuario(row)
+	if err != nil {
+		// Achado real, 23/10: `usuarios.email` é único GLOBALMENTE (entre todas as
+		// prefeituras, desde 22/09), mas o fallback por e-mail acima é escopado por
+		// prefeitura — então um e-mail que já existe numa OUTRA prefeitura (ex: o mesmo
+		// endereço pessoal usado numa conta real de Jaboatão e também numa conta de teste da
+		// Smartândia) nunca é achado pelo fallback (corretamente, por isolamento de tenant),
+		// mas o INSERT ainda colide com a constraint global — sem esse `if`, isso vazava como
+		// `erro_interno` (500) genérico pro usuário, em vez de uma causa clara.
+		if strings.Contains(err.Error(), "usuarios_email_key") {
+			return nil, ErrEmailJaExiste
+		}
+		return nil, err
+	}
+	return u, nil
 }

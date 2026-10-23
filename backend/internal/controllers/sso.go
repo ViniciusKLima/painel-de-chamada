@@ -163,6 +163,15 @@ func (c *Controllers) PostSessaoPortal(w http.ResponseWriter, r *http.Request) {
 			ssoErro(w, http.StatusForbidden, "credencial_sem_identificador", "e-mail ja vinculado a outra identidade", "vinculo externo conflitante", emissor)
 			return
 		}
+		if errors.Is(err, repository.ErrEmailJaExiste) {
+			// Achado real, 23/10: `usuarios.email` é único globalmente, mas o fallback por
+			// e-mail do login via portal é escopado por prefeitura — um e-mail que já existe
+			// numa OUTRA prefeitura (cenário real: a mesma pessoa com conta de produção em
+			// Jaboatão e conta de teste na Smartândia, mesmo e-mail pessoal) nunca é achado
+			// pelo fallback, mas colide no INSERT. Mensagem clara em vez de "erro interno".
+			ssoErro(w, http.StatusConflict, "email_ja_usado_em_outra_prefeitura", "este e-mail ja esta cadastrado em outra prefeitura no sistema", "email duplicado entre tenants", emissor)
+			return
+		}
 		ssoErro(w, http.StatusInternalServerError, "erro_interno", "erro interno", err.Error(), emissor)
 		return
 	}
