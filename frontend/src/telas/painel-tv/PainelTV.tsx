@@ -201,25 +201,19 @@ export default function PainelTV() {
     );
   }
 
-  // Três modos (23/09, era só ativo/descanso): "ativo" tem uma chamada nova de verdade em
-  // destaque (com narração e barra de tempo); "aguardando" é quando não há nada novo pra
-  // anunciar mas ainda existe gente chamada, não órfã, dentro do prazo — fica visível como
-  // blocos em vez de sumir pra tabela (pedido explícito do dono do produto); "descanso" é só
-  // quando não sobra nada disso, a tabela cheia ocupa a tela toda. O backend já exclui da
-  // tabela (`ultimasChamadas`) quem estiver ocupando o destaque (atual OU aguardando) — o
-  // frontend não precisa mais fazer esse slice manualmente.
+  // Dois modos: "ativo" tem uma chamada nova de verdade em destaque (com narração e barra de
+  // tempo); "descanso" é quando não há nada novo pra anunciar, a tabela cheia ocupa a tela
+  // toda. Removido o modo "aguardando" (introduzido 23/09, revertido 20/10) — mantinha quem
+  // já tinha sido chamado em destaque por tempo indefinido até ser marcado/rechamado,
+  // passando a impressão de que a tela tinha travado assim que os 30s normais da exibição
+  // já tinham passado há muito. Agora, assim que a exibição expira, a pessoa cai direto pra
+  // "últimas chamadas" como qualquer outra — o ícone cinza (`StatusIcone`, `ehOrfao=false`)
+  // já deixa claro ali que ela ainda está dentro do prazo, sem precisar de um modo à parte.
   const emAtivo = !!dados?.chamadaAtual;
-  // Backend devolve aguardando ordenado do mais antigo pro mais novo (é assim que ele decide
-  // quem entra quando tem mais candidatos que o limite — quem espera há mais tempo tem
-  // prioridade de aparecer). Pra EXIBIÇÃO, a ordem é invertida (23/09, pedido explícito: "2
-  // ficam em coluna, mais recente em cima") — o mais recente sempre ocupa a primeira posição
-  // do grid (topo/esquerda), não importa quantos blocos existam.
-  const aguardando = [...(dados?.aguardando ?? [])].reverse();
-  const emAguardando = !emAtivo && aguardando.length > 0;
-  const emDescanso = !emAtivo && !emAguardando;
+  const emDescanso = !emAtivo;
   const listaTabela = dados?.ultimasChamadas ?? [];
   const chaveAtual = dados?.chamadaAtual ? `${dados.chamadaAtual.protocolo}-${dados.chamadaAtual.guiche}` : null;
-  const modo = emAtivo ? "modo-ativo" : emAguardando ? "modo-aguardando" : "modo-descanso";
+  const modo = emAtivo ? "modo-ativo" : "modo-descanso";
 
   return (
     <div className="painel-tv">
@@ -239,21 +233,6 @@ export default function PainelTV() {
               </div>
               <BarraTempo key={chaveAtual} expiraEm={dados.chamadaAtual.expiraEm} duracaoTotalSegundos={dados.chamadaAtual.duracaoTotalSegundos} />
             </>
-          )}
-          {emAguardando && (
-            <div className={`aguardando-grade aguardando-grade-${aguardando.length}`}>
-              {aguardando.map((ag) => (
-                <div className="aguardando-bloco" key={`${ag.protocolo}-${ag.guiche}`}>
-                  <span className="aguardando-nome">{ag.nome}</span>
-                  {/* Nome, protocolo e guichê empilhados em coluna, reaproveitando as MESMAS
-                      classes da tabela padrão (historico-protocolo/historico-guiche-pill) —
-                      pedido 23/09: "mesma estrutura do padrão", em vez de uma tipografia
-                      bespoke só pra este bloco. */}
-                  <span className="historico-protocolo">{ag.protocolo}</span>
-                  <span className="historico-guiche-pill">{ag.guiche}</span>
-                </div>
-              ))}
-            </div>
           )}
         </section>
 

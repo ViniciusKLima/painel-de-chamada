@@ -351,6 +351,14 @@ globalmente via seletor de elemento (`table`/`th`/`td`), não precisa de classe 
   "sem fundo branco". Quando a seção também precisa de uma ação (ex. "Chamar próximo"), ela
   fica ao lado do título numa `.secao-cabecalho` (`display:flex; justify-content:
   space-between`), fora de `.tabela-cartao` e nunca dentro do `<th>` da tabela.
+- **Regra vale pra QUALQUER tela com busca/abas/tabela, não só o atendente** — a Recepção
+  (`Recepcao.tsx`) ainda empacotava busca+abas+tabela inteiras dentro de um `<section
+  className="cartao">` único até 20/10 (nunca tinha sido migrada junto com o atendente em
+  21/09, ficou inconsistente sem ninguém notar até o dono do produto apontar). Corrigido:
+  virou `<section className="bloco-recepcao">` (sem `.cartao`, só um `margin-bottom` pro
+  respiro que o cartão dava) com busca/abas soltos e a tabela em `.tabela-cartao` do mesmo
+  jeito. **Checklist pra tela nova de lista**: nunca um `<section className="cartao">`
+  envolvendo busca+abas+tabela juntos — só `.tabela-cartao` na tabela, o resto solto.
 
 ## Armadilha de especificidade: hover custom num `<button>`
 

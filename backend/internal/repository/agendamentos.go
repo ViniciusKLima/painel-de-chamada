@@ -250,55 +250,6 @@ func (r *Repo) ListarChamadosCompartilhadosPorGrades(ctx context.Context, gradeI
 	return lista, rows.Err()
 }
 
-// AguardandoExibicao é uma linha do "modo aguardando" do painel de TV (23/09) — gente já
-// chamada, ainda não atendida/ausente, mas que já saiu do destaque normal do painel (a
-// exibição de 30s/15s expirou) e ainda não virou órfã. Ver ListarAguardandoExibicao.
-type AguardandoExibicao struct {
-	Protocolo         string
-	Nome              string
-	GuicheNome        string
-	PrimeiraChamadaEm time.Time
-}
-
-// ListarAguardandoExibicao alimenta o "modo aguardando" do painel de TV: pedido do dono do
-// produto (23/09) pra parar de esconder na tabela quem ainda está sendo esperado por um
-// atendente. Reaproveita exatamente a mesma condicaoOrfao usada em ChamarProximo/
-// ListarChamadosCompartilhados/UltimasChamadas — quem já é órfão (dono já seguiu em frente
-// pra outra pessoa) explicitamente NÃO entra aqui ("se estiver orfão nao fica no painel"),
-// só quem ainda está genuinamente dentro do que o próprio atendente está esperando.
-// Ordenado pela chamada mais antiga primeiro (quem espera há mais tempo aparece primeiro),
-// limitado a `limite` (painel mostra no máximo 4 blocos, 23/09). Chamado pelo handler só quando não
-// há nenhuma chamada nova ativa em destaque (ver GetPainel) — nunca compete com a exibição
-// normal, só ocupa o espaço quando ele está livre.
-func (r *Repo) ListarAguardandoExibicao(ctx context.Context, gradeID string, limite int) ([]AguardandoExibicao, error) {
-	rows, err := r.Pool.Query(ctx, `
-		select a.protocolo, a.nome_cidadao, g.nome, primeira.chamado_em
-		from agendamentos a
-		`+juncoesUltimaChamada+`
-		join guiches g on g.id = ultima.guiche_id
-		join lateral (
-			select min(c4.chamado_em) as chamado_em from chamadas c4 where c4.agendamento_id = a.id
-		) primeira on true
-		where a.grade_id = $1 and a.status = 'chamado' and not (`+condicaoOrfao+`)
-		order by primeira.chamado_em asc
-		limit $2
-	`, gradeID, limite)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var lista []AguardandoExibicao
-	for rows.Next() {
-		var ag AguardandoExibicao
-		if err := rows.Scan(&ag.Protocolo, &ag.Nome, &ag.GuicheNome, &ag.PrimeiraChamadaEm); err != nil {
-			return nil, err
-		}
-		lista = append(lista, ag)
-	}
-	return lista, rows.Err()
-}
-
 // TemChamadaPendenteNaoRechamada: true se esse usuário tem uma chamada ativa (status
 // 'chamado') cujo cooldown, contado da ÚLTIMA chamada que ele fez nela, ainda não passou —
 // enquanto isso for true, ele não pode chamar mais ninguém.

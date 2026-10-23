@@ -1,15 +1,19 @@
 ---
 name: auth-conecta-cidades
-description: Referência do fluxo real de SSO (JWT via URL) da plataforma Conecta Cidades — ADIADO PRO PÓS-MVP (decisão de 19/09, ver skill `auth-login-mvp` pro que o piloto usa de verdade). Consultar só quando essa integração for retomada.
+description: Fluxo real de SSO (JWT via URL) da plataforma Conecta Cidades — IMPLEMENTADO (22/10). ÚNICO método de login do sistema desde 22/10 (login por senha foi removido por completo, ver seção "Login por senha removido por completo").
 ---
 
-# Autenticação real — SSO da plataforma Conecta Cidades (pós-MVP)
+# Autenticação real — SSO da plataforma Conecta Cidades
 
-⚠️ **Adiado pro pós-MVP (decisão de 19/09)**: "essas questões do JWT ainda serão discutidas, mas
-pro MVP não vamos usar, vamos passar com login mesmo". O piloto usa login simples (email+senha) —
-ver skill `auth-login-mvp`. Este documento continua valendo como pesquisa/desenho de referência
-pra quando a integração real com o SSO da prefeitura for retomada, mas **não implementar nada
-daqui durante o MVP**.
+⚠️ **Decisão de 19/09 revertida em 22/10**: estava "adiado pro pós-MVP" até a credencial de
+introspecção (`introspect_api`) chegar via Léo — assim que confirmou funcionar de verdade
+contra a API real, o dono do produto pediu implementação imediata ("pode meter marcha!!!!").
+**Implementado e no ar** (ver seção "Implementação real (22/10)" mais abaixo). **Atualização,
+mesmo dia**: o login por senha não ficou convivendo em paralelo por muito tempo — o dono do
+produto pediu a remoção completa dele na sequência ("derrube toda aquela autenticação antiga
+que tinhamos feito e suba apenas com o metodo jwt"). Este SSO é hoje o **único** jeito de entrar
+no sistema — ver seção "Login por senha removido por completo" no fim deste documento, e a
+skill `auth-login-mvp` (agora marcada obsoleta) pro registro histórico de como funcionava antes.
 
 Baseado em `_docs-externas/autenticacao-por-url-conecta.md` (documentação de um produto irmão nessa mesma
 plataforma, "Emissão de Carteiras", que já valida essa credencial em produção — adaptado aqui
@@ -184,22 +188,35 @@ Achados que continuam de pé desse token real:
   prévia (mesmo padrão de `criadoViaSso` que já está no schema). Usuário desativado não é
   recriado.
 
-## 6. Mapeamento de papel — ⚠️ ainda não confirmado com a plataforma pro nosso serviço
+## 6. Mapeamento de papel
 
-O produto irmão reconhece só os papéis do domínio dele (`admin`, `contract_admin`, `manager`,
-`operator`) e trata qualquer outro papel da "plataforma mãe" — inclusive, no texto original,
-**`attendant`, `receptionist`** — como "não concede nada" (porque não são papéis daquele
-produto). Isso é evidência forte de que a plataforma usa `attendant`/`receptionist` como nomes
-de papel globais, prováveis candidatos pro nosso mapeamento:
+**Confirmado diretamente pelo dono do produto (22/10)**, que tem visão de dentro da própria
+hierarquia de papéis da Conecta Cidades (não é mais inferência por nome parecido):
+
+- **`admin`/`super_admin`** são o nível MAIS ALTO da plataforma inteira — "o maior abaixo só
+  dos devs, nós da LegalTech" (o dono do produto é quem detém esse nível, usado só pra testar
+  — não é um papel de prefeitura nenhuma). Mapeado pro nosso `domain.PapelAdmin`, mas **NUNCA
+  concedido via SSO** (ver `PostSessaoPortal`, bloqueio explícito) — `admin` no token significa
+  "admin de toda a plataforma Conecta Cidades", não "admin da nossa instalação", e conceder
+  nosso admin global (que enxerga TODAS as prefeituras cadastradas aqui) a esse nível seria
+  escalação de privilégio entre tenants.
+- **`contract_admin`** é o admin DA PREFEITURA especificamente — tenant-scoped, confirmado
+  como "o admin da prefeitura vai vir como contract_admin". Mapeado pro nosso `gestor` (nosso
+  papel mais alto que ainda é escopado a uma secretaria, nunca global).
+- **`manager`** continua mapeado pra `gestor` também — mesmo papel "gerencial" genérico de
+  antes, confiança média (pode ser um nível intermediário dentro da plataforma deles, mas
+  nosso domínio só tem um nível "gestor", não distingue).
+- **`attendant`/`receptionist`** continuam `atendente`/`recepcionista`, confiança alta (nome
+  bate literalmente, e o produto irmão já tratava esses dois como papéis "de fora" do domínio
+  dele, evidenciando que são nomes globais da plataforma).
 
 | `roles` (JWT) | Papel no nosso painel | Confiança |
 | --- | --- | --- |
+| `admin`, `super_admin` | `admin` (mas BLOQUEADO via SSO, só manual) | confirmado — mas escopo global incompatível com SSO |
+| `contract_admin` | `gestor` | confirmado (22/10) — "admin da prefeitura" |
+| `manager` | `gestor` | média — papel gerencial genérico, significado exato ainda pode variar |
 | `attendant` | `atendente` | alta — nome bate literalmente |
 | `receptionist` | `recepcionista` | alta — nome bate literalmente |
-| `manager` | `gestor` | média — é o papel "gerencial" genérico da plataforma, mas seu significado exato varia por serviço (no produto irmão, `manager` faz outra coisa) |
-
-**Confirmar isso com a equipe da plataforma antes de travar como regra definitiva** — mesmo
-espírito da nota já existente na skill `papeis-e-telas`.
 
 `department_ids`/`unit_ids`: diferente do produto irmão (que não lê esses campos porque o
 domínio dele não precisa de sub-hierarquia dentro do município), **o nosso painel precisa
@@ -365,3 +382,248 @@ mais suposição marcada como pendente.
 Ainda falta, mesmo pra testar contra a Smartândia: o token de API com permissão
 `introspect_api` (item 2 da lista acima) — sem ele, o passo 8 da validação (introspection
 obrigatória) não tem como ser implementado nem testado de ponta a ponta.
+
+## Confirmação final: doc oficial do PRÓPRIO Jaboatão, não mais de outro município (22/10)
+
+Até aqui a confirmação "oficial" vinha de uma instância de outro município (Porto Velho-RO,
+16/10) — o mesmo produto, mas não o nosso `iss` de verdade. Em 22/10, lida a documentação
+pública direto em `jaboataomaisfacil.jaboatao.pe.gov.br/docs/integracoes` (a doc é renderizada
+pelo Scalar a partir de um YAML OpenAPI injetado no HTML da página — `curl` simples já traz o
+spec inteiro, sem precisar de JS/navegador). **Confirma tudo que já estava documentado aqui
+sem nenhuma contradição**, e acrescenta 4 coisas novas de verdade:
+
+1. **Regra exata do `aud`, antes só aproximada**: "`aud` deve ser exatamente o seu domínio,
+   **sem http/https, páginas ou parâmetros**" — ou seja, hostname puro (ex. `painel-de-
+   chamada-kappa.vercel.app`), nunca uma URL completa nem um caminho. Refina a seção 3/seção
+   7 passo 5 desta skill (que já assumia isso, mas sem a confirmação literal "sem protocolo/
+   caminho/query").
+2. **Chave pública RSA real de Jaboatão**, publicada em texto puro na própria doc (pra
+   verificação local sem precisar buscar o JWKS toda vez) — a doc mesmo recomenda preferir
+   `GET /.well-known/jwks.json` em vez de fixar essa chave no código, por causa de rotação
+   futura; a chave fixa existe só como fallback/exemplo. Não reproduzida aqui por ser long-
+   lived e rotacionável — pegar direto da doc ou do JWKS no momento de implementar.
+3. **Schema completo do `POST /oauth/introspect` e dos dois endpoints de descoberta**
+   (`/.well-known/jwks.json`, `/.well-known/openid-configuration`) — confirma exatamente o
+   que a seção acima já tinha (request `{token}`, resposta `{active, jti, aud, exp, iat,
+   payload}`), e acrescenta os casos de erro: `400` token ausente, `401` token de API inválido
+   ou sem permissão `introspect_api`, `429` rate limit (ver item 4).
+4. **Rate limit por token de API**: 300 requisições/minuto e 30000/dia (ajustável por token),
+   com headers `X-RateLimit-Limit`/`X-RateLimit-Remaining`/`X-RateLimit-Reset` em toda
+   resposta autenticada; excedeu, `429` com corpo `RateLimitError` e header `Retry-After`
+   (segundos). **A janela diária zera às 00:00 UTC (21:00 horário de Brasília), não à meia-
+   noite local** — detalhe fácil de errar num agendador de limpeza/retry. Formato de erro
+   padrão da API inteira (não só introspection): `{error, message, error_code, request_id}`
+   — vale logar o `request_id` em qualquer chamada que falhar, pra reportar pra equipe da
+   plataforma com algo rastreável.
+
+**Checklist "nunca faça" da própria doc** (reforça o que a seção 4/14 desta skill já diz, sem
+nada novo em espírito, mas vale ter listado literal): usar dado do token sem verificar
+assinatura; não validar `exp`/`iat`; não verificar `iss`/`aud`; não chamar introspection;
+aceitar token expirado; reutilizar token já processado; assumir presença do claim `cpf`.
+
+**Sobre o `autenticacao.md` que o Léo mandou (22/10)**: comparado com essa doc oficial real,
+confirma a suspeita — aquele arquivo **não é documentação da Conecta Cidades** (usa
+framework/ORM diferentes dos nossos, nomes genéricos "organização"/papéis `admin/gestor/
+operador`, referencia `.specify/memory/constitution.md` que é coisa do NOSSO spec-kit, e
+principalmente **não menciona a introspection obrigatória em nenhum lugar** — que a doc oficial
+trata como requisito não-negociável). É mais provável que seja um template genérico de "como
+implementar esse padrão de SSO-via-URL" que o Léo tem/usa, não escrito pela equipe da Conecta
+Cidades. Dono do produto vai confirmar com ele antes de decidir o que fazer com aquele arquivo
+— até lá, a fonte de verdade pra implementação continua sendo exclusivamente a doc oficial
+(esta seção + "Confirmação por documentação OFICIAL real", acima).
+
+## Implementação real (22/10)
+
+Credencial de introspecção testada e confirmada real (curl direto contra `POST /oauth/
+introspect` com um token inválido de propósito → `200 {"active":false}`, não `401` — confirma
+que o token de API em si é válido e tem a permissão certa). Guardada em
+`backend/.env` → `CONECTA_INTROSPECT_API_TOKEN` (NUNCA versionada — `.env` está no
+`.gitignore`; só o placeholder vazio existe em `.env.example`).
+
+**Schema**: nenhuma migration nova precisou ser escrita — `prefeituras.issuer_jwt`,
+`usuarios.external_sub` e a tabela `mapeamento_externo` (`tipo` department/unit →
+`secretaria_id`/`unidade_id`) já existiam no banco desde o design original da hierarquia
+Admin/Prefeitura (22/09), só nunca tinham sido usadas por código nenhum até agora.
+
+**Backend, arquivos novos**:
+- `internal/auth/jwks.go` — cache de JWKS em memória (processo inteiro, por URL), sem
+  biblioteca externa (conversão JWK→`*rsa.PublicKey` feita à mão — `n`/`e` em base64url,
+  poucas linhas, não justificava uma dependência nova). `kid` desconhecido numa busca FRESCA
+  vira `ErrChaveDesconhecida` (credencial inválida, 401); `kid` desconhecido mas cache ainda
+  dentro da janela de 5min sem rebuscar vira `ErrJWKSIndisponivel` (503) — achado real
+  testando contra a JWKS de verdade da Smartândia: a primeira versão classificava os dois
+  casos igual, fazendo um token claramente forjado (kid inexistente) devolver "serviço
+  indisponível" em vez de "credencial inválida".
+- `internal/auth/portal.go` — `NormalizarEmissor`, `LerEmissorSemVerificar` (lê `iss` sem
+  confiar), `VerificarCredencialPortal` (assinatura RS256/384/512 contra o JWKS do emissor
+  JÁ resolvido no banco — nunca uma URL vinda de fora, diferente do desenho genérico de
+  referência que previa uma `URLChaves` configurável; aqui é sempre
+  `{issuer}/.well-known/jwks.json`, derivado do `issuer_jwt` cadastrado), `MapearPapel`
+  (`attendant`→atendente e `receptionist`→recepcionista, confiança alta; `manager`→gestor,
+  confiança média; `admin`/`super_admin`→admin, confirmado direto pelo dono do produto).
+- `internal/auth/introspect.go` — `POST {issuer}/oauth/introspect`, Bearer
+  `CONECTA_INTROSPECT_API_TOKEN`. 429/401/erro de rede do lado da Conecta Cidades viram
+  `identidade_indisponivel` (503) — são problema de infraestrutura/configuração nossa, não
+  credencial ruim do usuário.
+- `internal/auth/portal_test.go` — 10 testes de verdade (não mockados) contra uma chave RSA
+  gerada na hora + um `httptest.Server` fazendo de JWKS: token válido passa; `aud` errado,
+  token expirado, `iss` errado, assinatura forjada (chave diferente da publicada) e algoritmo
+  HS256 (nunca aceito, mesmo pedido pelo header) todos recusados; normalização de emissor;
+  mapeamento de papel (incluindo prioridade quando mais de um papel reconhecido); introspecção
+  (ativo/inativo/token de API inválido). Não dá pra testar contra a chave PRIVADA real da
+  Conecta Cidades (não temos acesso a ela, só a pública) — por isso a chave de teste é gerada
+  na hora, mas o formato (JWKS em `/.well-known/jwks.json`, claims, RS256) é exatamente o
+  documentado oficialmente.
+- `internal/repository/mapeamento_externo.go` — `ResolverSecretariaPorExternalIDs`/
+  `ResolverUnidadePorExternalIDs`: um usuário só tem UMA secretaria/unidade no nosso schema,
+  mas o token pode trazer vários `department_ids`/`unit_ids` — usa o PRIMEIRO que tiver
+  mapeamento cadastrado, ignora o resto. Simplificação deliberada (documentada no próprio
+  arquivo), não bug.
+- `internal/controllers/sso.go` — `PostSessaoPortal`, `POST /api/v1/sessao/portal`
+  (público, sem sessão prévia — mesma rota pública que `/login`). Orquestra a ordem exata da
+  seção 4: ler `iss` sem confiar → resolver prefeitura → verificar assinatura/claims →
+  mapear papel → checar identificador → **introspecção obrigatória** → resolver secretaria/
+  unidade → upsert → cookie de sessão. Novo código de erro, não previsto na tabela original:
+  `vinculo_nao_encontrado` (403) — papel reconhecido mas `department_ids`/`unit_ids` não
+  batem com nenhum `mapeamento_externo` cadastrado.
+
+**Backend, arquivos alterados**: `internal/repository/prefeituras.go`
+(`BuscarPrefeituraPorIssuer`), `internal/repository/usuarios.go`
+(`BuscarUsuarioPorExternalSub`, `UpsertUsuarioPortal` — busca por `external_sub` primeiro,
+`email` depois; papel/vínculo são REAPLICADOS a cada entrada; usuário desativado não é
+recriado nem reativado sozinho, quem barra é o controller checando `Ativo` depois do upsert,
+igual já fazia o login por senha), `internal/controllers/controllers.go` (3 campos novos:
+`ChavesPublicas`, `ConectaAudiencia`, `ConectaIntrospectToken`), `cmd/api/main.go` (rota nova
++ variáveis `CONECTA_AUDIENCIA`/`CONECTA_INTROSPECT_API_TOKEN`).
+
+**Bug real corrigido no processo, sem relação direta com SSO**: `.env` nunca foi de fato
+carregado pelo processo Go — todo valor em uso até 22/10 só "funcionava" porque o default
+hardcoded em `envOu()` coincidia com o do arquivo. Ficou visível ao adicionar
+`CONECTA_INTROSPECT_API_TOKEN`, que não tem (nem deveria ter) um default seguro. Corrigido
+adicionando `github.com/joho/godotenv` (`godotenv.Load()` logo no início de `main()`, erro
+ignorado de propósito — em produção as variáveis reais vêm do host, sem arquivo `.env`).
+
+**Frontend**: `api.ts` ganhou `loginPortal(credencial)` (`POST /api/v1/sessao/portal`).
+`Login.tsx` lê `?token=` da URL numa guarda de entrada (não um componente aninhado) — a URL é
+limpa (`history.replaceState`) IMEDIATAMENTE, antes mesmo da resposta do backend chegar
+(query string não pode sobreviver no histórico/`Referer`/log de proxy). Sucesso: redireciona
+pelo papel, mesmo mapa `DESTINO_POR_PAPEL` que o login por senha já usa. Falha: mostra o erro
+e volta pro formulário normal — login por senha continua funcionando como alternativa, nunca
+foi removido.
+
+**Testado de ponta a ponta, o que dava pra testar sem navegador**: token de API de
+introspecção confirmado real contra o endpoint de produção; os 10 testes automatizados
+(`go test ./internal/auth/...`) cobrindo toda a lógica criptográfica; um token forjado com
+`iss` real da Smartândia mas assinatura/kid falsos mandado pro endpoint de verdade — confirma
+que a busca da prefeitura por emissor E a busca/parsing da JWKS real da Smartândia funcionam
+ponta a ponta contra dado externo genuíno (não só contra o JWKS fabricado dos testes),
+recusando corretamente com `identidade_invalida`/401.
+
+**Não testado ainda — pendente**: um login completo com um token REAL, recém-gerado,
+assinado de verdade pela Smartândia (precisa de alguém logar lá e pegar o token fresco — only
+válido por 30s, não dá pra reaproveitar um antigo) — isso cobriria a verificação de assinatura
+real passando, a introspecção com um token genuíno, o upsert de usuário e a sessão sendo
+criada de ponta a ponta. Também não testado: a resolução de secretaria/unidade via
+`mapeamento_externo` com dado de verdade (a tabela está vazia agora — precisa cadastrar pelo
+menos uma linha de teste pra isso rodar, ver pendência abaixo). `CONECTA_AUDIENCIA` ainda
+vazio no `.env` — e, desde a revisão de segurança abaixo, isso agora DESLIGA o endpoint
+inteiro (503), nunca pula a checagem de `aud` — preencher com o valor real assim que um token
+de teste revelar qual é.
+
+## Revisão de segurança, mesmo dia (22/10) — 3 achados reais, todos corrigidos
+
+Uma revisão automática rodou logo depois da implementação e achou 3 problemas genuínos —
+nenhum "nitpick", os 3 eram caminhos reais de falha de isolamento/autenticação. Corrigidos na
+hora, com migration nova (`000011_sso_escopo_tenant`) e 5 testes automatizados novos (4 contra
+Postgres real, 1 de unidade) cobrindo especificamente os 3 cenários.
+
+1. **Account takeover entre tenants via `external_sub` sem escopo** (HIGH) — `sub` é um ID
+   interno POR MUNICÍPIO na Conecta Cidades (inteiro pequeno, tipo "42"), não globalmente
+   único. `usuarios.external_sub` tinha unique GLOBAL — duas prefeituras diferentes com um
+   servidor "sub=42" cada uma colidiriam no mesmo registro. Corrigido: coluna nova
+   `usuarios.external_issuer`, índice único composto `(external_issuer, external_sub)`
+   (migration 000011), toda busca/gravação agora usa o par, nunca o `sub` sozinho.
+   Adicionalmente, o fallback de busca por e-mail (quando `external_sub` não bate com nada)
+   ganhou duas travas: só roda se `email_verified` vier `true` no token, e nunca REBINDA um
+   usuário que já tem um vínculo externo diferente gravado (`ErrVinculoExternoConflitante`,
+   recusa em vez de sobrescrever silenciosamente).
+2. **Vazamento de acesso entre tenants via `mapeamento_externo` sem escopo** (HIGH) — mesma
+   causa raiz do item 1, mas em `department_id`/`unit_id`: a tabela resolvia `(tipo,
+   external_id)` → secretaria/unidade SEM considerar de qual prefeitura o token era. Um
+   `department_id=3` de uma prefeitura podia resolver pro mapeamento cadastrado por outra.
+   Corrigido: coluna `mapeamento_externo.prefeitura_id` (obrigatória), índice único composto
+   `(prefeitura_id, tipo, external_id)`, resolução sempre escopada pela prefeitura já
+   resolvida via `issuer` — mais um join de defesa em profundidade confirmando que a
+   secretaria/unidade apontada realmente pertence àquela prefeitura (protege contra erro de
+   cadastro manual, já que não existe tela pra isso ainda).
+3. **Checagem de `aud` falhando ABERTA** (MEDIUM) — `VerificarCredencialPortal` só aplicava
+   `jwt.WithAudience(...)` quando `audienciaEsperada != ""`; com `CONECTA_AUDIENCIA` vazio (o
+   estado real do `.env` até agora), a checagem de audiência era simplesmente PULADA — abria
+   caminho pro clássico "ataque de confusão de audiência" (um token válido emitido pra OUTRA
+   aplicação integrada ao mesmo emissor seria aceito aqui também). Corrigido em duas camadas:
+   `VerificarCredencialPortal` agora recusa (`ErrAudienciaNaoConfigurada`) se chamada sem
+   audiência, e `PostSessaoPortal` já barra antes disso (503) se `ConectaAudiencia` estiver
+   vazia — mesmo padrão de "falha fechada" que já existia pro token de introspecção.
+
+**Testes novos**: `internal/auth/portal_test.go` ganhou
+`TestVerificarCredencialPortal_AudienciaVaziaFalhaFechado`; `internal/repository/sso_test.go`
+(novo arquivo) cobre os outros 4 cenários contra Postgres real — dois usuários com o mesmo
+`sub` em emissores diferentes nunca colidem; tentar rebindar um vínculo externo já
+estabelecido recusa; fallback por e-mail não-verificado falha (constraint) em vez de
+vincular/criar; o mesmo `external_id` mapeado em duas prefeituras resolve pra secretaria
+certa em cada uma.
+
+**Pendências explícitas**:
+- Cadastrar pelo menos uma linha em `mapeamento_externo` (agora com `prefeitura_id`) pra
+  testar atendente/recepcionista/gestor via SSO de verdade (hoje só dá pra testar `admin`,
+  que não precisa de vínculo).
+- ~~Confirmar `CONECTA_AUDIENCIA` com um token real~~ ✅ resolvida, mesmo dia — ver abaixo.
+- Mapeamento de papel (`manager`→gestor) continua confiança MÉDIA, não confirmado
+  oficialmente — mesma pendência de antes, agora com código de verdade em cima dela.
+- Nenhuma tela de UI pra cadastrar `mapeamento_externo` — só dá pra inserir direto no banco
+  por enquanto (fora de escopo desta rodada).
+
+## Login por senha removido por completo (22/10, mesmo dia)
+
+Pedido direto do dono do produto, na sequência da implementação acima: **"isso mesmo, derrube
+toda aquela autenticação antiga que tinhamos feito e suba apenas com o metodo jwt"**. Diferente
+do que a seção anterior registrava (os dois métodos convivendo), o login por email+senha foi
+removido por completo do sistema — não é mais um fallback, nem um método alternativo. Hoje a
+única forma de entrar é `?token=` na URL (SSO via portal).
+
+**`CONECTA_AUDIENCIA` confirmado e preenchido** no mesmo dia, via token real gerado pelo dono do
+produto em `mock.conectacidades.app` (prefeitura de teste "Smartândia") — valor real:
+`painel-de-chamada-kappa.vercel.app` (o domínio Vercel do próprio frontend). O endpoint de SSO
+deixou de estar 503 por audiência vazia.
+
+**Removido do backend**: `PostLogin`/`corpoLogin` (`internal/controllers/auth.go`), a rota
+`POST /api/v1/login`, `auth.HashSenha`/`auth.VerificarSenha` (bcrypt) e a dependência
+`golang.org/x/crypto/bcrypt` (demovida pra indireta no `go.mod`), o campo `SenhaHash` de
+`domain.Usuario`, e toda leitura/escrita de `senha_hash` em `internal/repository/usuarios.go`
+(`NovoUsuario`/`AtualizacaoUsuario`/`CriarUsuario`/`AtualizarUsuario`) e nos controllers que
+criam/editam usuário (`admin.go`, `usuarios.go`). A coluna `usuarios.senha_hash` **continua
+existindo no banco**, só não é mais lida/escrita por nenhum código — não valia uma migration só
+pra isso. Criar um gestor/atendente/recepcionista agora é "pré-provisionar": só cria o registro
+(nome, email, papel, vínculo) — a identidade real só se liga a ele no primeiro login SSO (match
+por `external_sub`/e-mail verificado, ver seção de segurança acima).
+
+**Removido do frontend**: `Login.tsx` reescrito — sem formulário nenhum. Só 2 estados: tela de
+"entrando pelo portal…" (quando chega com `?token=`) e uma tela única de fallback pra qualquer
+outro caso (sem token, token inválido, sessão expirada/trocada) — visual de "painel de TV sem
+sinal" com a mensagem "Acesse pelo portal da sua prefeitura". `api.login()` removido de
+`api.ts`; campos de senha removidos dos formulários de criar/editar usuário
+(`telas/gestor/Usuarios.tsx`, `telas/admin/prefeitura/PrefeituraUsuarios.tsx`).
+
+**Verificado ao vivo**: `POST /api/v1/login` → 404 (rota não existe mais);
+`POST /api/v1/sessao/portal` com credencial inválida → 401 (SSO continua funcionando
+normalmente). `go build`/`go vet`/`gofmt`/`go test ./...` e `tsc --noEmit`/`npm run build`
+limpos.
+
+⚠️ **Consequência real, ainda sem solução definida**: o papel `admin` é explicitamente
+BLOQUEADO no SSO (ver seção 6, "escalação de privilégio entre tenants") — e agora que o login
+por senha também não existe mais, **não existe nenhum caminho de UI pra chegar em `/admin`**.
+Isso não foi resolvido nesta rodada — só identificado. Nenhuma mudança de código foi feita em
+cima disso até o dono do produto decidir como quer resolver (ex: um mecanismo de acesso de
+emergência separado, reconsiderar o bloqueio especificamente pra um caso bem delimitado, ou um
+jeito manual via banco mesmo). Sinalizar isso de volta pro dono do produto é o próximo passo,
+não uma decisão a tomar sozinho.

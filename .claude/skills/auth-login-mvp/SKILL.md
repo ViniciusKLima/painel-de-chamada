@@ -1,9 +1,19 @@
 ---
 name: auth-login-mvp
-description: Use ao implementar o login do MVP (email + senha, sem integração real com o SSO da plataforma ainda). Decisão do dono do produto (19/09) — pro piloto, login simples é suficiente; o fluxo real de SSO (skill `auth-conecta-cidades`) fica pra depois do MVP.
+description: "OBSOLETA (22/10) — login por email+senha foi completamente removido do sistema, substituído pelo SSO real (skill auth-conecta-cidades). Mantida só como registro histórico de como o MVP funcionou entre 19/09 e 22/10; não implementar nada daqui de volta."
 ---
 
-# Login do MVP — email + senha, sem SSO real ainda
+# [OBSOLETA] Login do MVP — email + senha, sem SSO real ainda
+
+> **22/10 — esta skill não reflete mais o sistema.** O dono do produto pediu explicitamente
+> "derrube toda aquela autenticação antiga que tinhamos feito e suba apenas com o metodo jwt" —
+> todo o mecanismo abaixo (`POST /login`, bcrypt, coluna `senha_hash` em uso, formulário de
+> email/senha no frontend) foi removido do código. A única forma de entrar no sistema agora é o
+> SSO real via `?token=` na URL, documentado na skill `auth-conecta-cidades`. O conteúdo abaixo
+> fica só como registro histórico de como o MVP funcionou entre 19/09 e 22/10 — não implementar
+> nada daqui de volta sem decisão explícita nova do dono do produto. Ver CLAUDE.md, rodada de
+> 22/10 ("Login por senha removido por completo"), pro detalhe da remoção e a pendência que ela
+> abriu (acesso ao papel `admin`, que é bloqueado no SSO).
 
 **Decisão (19/09)**: o piloto **não** vai integrar o JWT real da plataforma Conecta Cidades por
 enquanto — "essas questões do JWT ainda serão discutidas, mas pro MVP não vamos usar, vamos

@@ -152,7 +152,12 @@ export default function Recepcao() {
       />
 
       <div className="pagina">
-        <section className="cartao">
+        {/* Bloco sem `.cartao` em volta (20/10, mesmo padrão já aplicado no atendente em
+            21/09) — busca/abas/tabela soltos direto sobre o fundo da página; a tabela
+            continua com seu próprio `.tabela-cartao` logo abaixo. Ver skill
+            identidade-visual, seção "Blocos de página sem moldura" — nenhuma tela nova
+            deve voltar a empacotar busca+abas+tabela dentro de um `.cartao` único. */}
+        <section className="bloco-recepcao">
           <div className="barra-busca">
             <div className="campo-busca">
               <Search size={18} />

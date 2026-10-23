@@ -252,11 +252,12 @@ func (c *Controllers) GetUnidadesDaSecretaria(w http.ResponseWriter, r *http.Req
 type corpoNovoGestor struct {
 	Nome  string `json:"nome"`
 	Email string `json:"email"`
-	Senha string `json:"senha"`
 }
 
-// PostGestor: POST /api/v1/secretarias/{secretariaId}/gestores — só admin. Cria um gestor
-// vinculado à secretaria inteira (não a uma unidade — ver skill modelo-dados).
+// PostGestor: POST /api/v1/secretarias/{secretariaId}/gestores — só admin. PRÉ-PROVISIONA um
+// gestor vinculado à secretaria inteira (não a uma unidade — ver skill modelo-dados). Sem
+// senha (22/10, login por senha removido) — a pessoa entra de verdade pela primeira vez via
+// SSO (portal da prefeitura), que acha este registro pelo e-mail e completa o vínculo.
 func (c *Controllers) PostGestor(w http.ResponseWriter, r *http.Request) {
 	if _, ok := exigirAdmin(w, r); !ok {
 		return
@@ -267,17 +268,12 @@ func (c *Controllers) PostGestor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var corpo corpoNovoGestor
-	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil || corpo.Nome == "" || corpo.Email == "" || corpo.Senha == "" {
-		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "nome, email e senha sao obrigatorios")
-		return
-	}
-	hash, err := auth.HashSenha(corpo.Senha)
-	if err != nil {
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
+	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil || corpo.Nome == "" || corpo.Email == "" {
+		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "nome e email sao obrigatorios")
 		return
 	}
 	usuario, err := c.Repo.CriarUsuario(r.Context(), repository.NovoUsuario{
-		Nome: corpo.Nome, Email: corpo.Email, SenhaHash: hash, Papel: domain.PapelGestor, SecretariaID: &secretariaID,
+		Nome: corpo.Nome, Email: corpo.Email, Papel: domain.PapelGestor, SecretariaID: &secretariaID,
 	})
 	if err != nil {
 		if err == repository.ErrEmailJaExiste {
@@ -293,16 +289,16 @@ func (c *Controllers) PostGestor(w http.ResponseWriter, r *http.Request) {
 type corpoNovoFuncionario struct {
 	Nome     string   `json:"nome"`
 	Email    string   `json:"email"`
-	Senha    string   `json:"senha"`
 	Papel    string   `json:"papel"` // "atendente" ou "recepcionista"
 	GradeIDs []string `json:"gradeIds"`
 }
 
 // PostFuncionario: POST /api/v1/unidades/{unidadeId}/funcionarios — admin (qualquer
 // unidade) ou gestor (só dentro da própria secretaria — pedido explícito do dono do
-// produto: "gestor só cria atendente e recepcionista dentro da sua secretaria"). Cria
-// atendente (exige gradeId — a fila específica que ele vai chamar) ou recepcionista (sem
-// grade — trabalha a unidade inteira, ver skill modelo-dados).
+// produto: "gestor só cria atendente e recepcionista dentro da sua secretaria"). PRÉ-
+// PROVISIONA atendente (exige gradeId — a fila específica que ele vai chamar) ou
+// recepcionista (sem grade — trabalha a unidade inteira, ver skill modelo-dados). Sem senha
+// (22/10) — mesma lógica de PostGestor, a pessoa entra de verdade via SSO.
 func (c *Controllers) PostFuncionario(w http.ResponseWriter, r *http.Request) {
 	usuario := auth.UsuarioDoContexto(r.Context())
 	if usuario.Papel != domain.PapelAdmin && usuario.Papel != domain.PapelGestor {
@@ -319,8 +315,8 @@ func (c *Controllers) PostFuncionario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var corpo corpoNovoFuncionario
-	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil || corpo.Nome == "" || corpo.Email == "" || corpo.Senha == "" {
-		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "nome, email e senha sao obrigatorios")
+	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil || corpo.Nome == "" || corpo.Email == "" {
+		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "nome e email sao obrigatorios")
 		return
 	}
 	var papel domain.Papel
@@ -347,13 +343,8 @@ func (c *Controllers) PostFuncionario(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	hash, err := auth.HashSenha(corpo.Senha)
-	if err != nil {
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
-		return
-	}
 	novoUsuario, err := c.Repo.CriarUsuario(r.Context(), repository.NovoUsuario{
-		Nome: corpo.Nome, Email: corpo.Email, SenhaHash: hash, Papel: papel, UnidadeID: &unidadeID, GradeIDs: corpo.GradeIDs,
+		Nome: corpo.Nome, Email: corpo.Email, Papel: papel, UnidadeID: &unidadeID, GradeIDs: corpo.GradeIDs,
 	})
 	if err != nil {
 		if err == repository.ErrEmailJaExiste {

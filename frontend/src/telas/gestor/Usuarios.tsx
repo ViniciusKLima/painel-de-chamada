@@ -12,10 +12,10 @@ function formatarUltimoAcesso(iso: string | null): string {
 }
 
 // Modal de edição de um usuário interno (22/09, replicando GESTOR-USUARIOS.png) — nome,
-// email, cargo, senha (opcional) e a grade em que está alocado. `ehEuMesmo` (22/09, pedido
-// explícito) desabilita o campo Cargo quando o gestor está editando a própria conta — ele
-// não pode se rebaixar/mudar o próprio papel, só nome/email/senha; editar outra pessoa
-// continua permitindo trocar o cargo normalmente.
+// email, cargo e a grade em que está alocado. `ehEuMesmo` (22/09, pedido explícito) desabilita
+// o campo Cargo quando o gestor está editando a própria conta — ele não pode se rebaixar/
+// mudar o próprio papel, só nome/email; editar outra pessoa continua permitindo trocar o
+// cargo normalmente. Campo de senha removido (22/10) — login é só via SSO agora.
 function ModalEdicaoUsuario({
   usuario,
   grades,
@@ -27,12 +27,11 @@ function ModalEdicaoUsuario({
   grades: Grade[];
   ehEuMesmo: boolean;
   onFechar: () => void;
-  onSalvar: (dados: { nome: string; email: string; papel: string; senha?: string; gradeIds: string[] }) => Promise<void>;
+  onSalvar: (dados: { nome: string; email: string; papel: string; gradeIds: string[] }) => Promise<void>;
 }) {
   const [nome, setNome] = useState(usuario.nome);
   const [email, setEmail] = useState(usuario.email);
   const [papel, setPapel] = useState(usuario.papel);
-  const [senha, setSenha] = useState("");
   const [gradeIds, setGradeIds] = useState(usuario.grades.map((g) => g.id));
   const [salvando, setSalvando] = useState(false);
 
@@ -40,7 +39,7 @@ function ModalEdicaoUsuario({
     evento.preventDefault();
     setSalvando(true);
     try {
-      await onSalvar({ nome, email, papel, senha: senha || undefined, gradeIds });
+      await onSalvar({ nome, email, papel, gradeIds });
     } finally {
       setSalvando(false);
     }
@@ -72,10 +71,6 @@ function ModalEdicaoUsuario({
           </label>
           {ehEuMesmo && <p className="dica">Você não pode mudar o próprio cargo — peça a outro gestor, se precisar.</p>}
           <label>
-            Nova senha (opcional)
-            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Deixe em branco pra manter a atual" />
-          </label>
-          <label>
             Grades alocadas
             <SelecaoGrades grades={grades} selecionadas={gradeIds} onMudar={setGradeIds} />
           </label>
@@ -102,13 +97,12 @@ function ModalCriarFuncionario({
 }: {
   grades: Grade[];
   onFechar: () => void;
-  onCriar: (dados: { nome: string; email: string; senha: string; papel: PapelFuncionario; gradeIds: string[] }) => Promise<void>;
+  onCriar: (dados: { nome: string; email: string; papel: PapelFuncionario; gradeIds: string[] }) => Promise<void>;
 }) {
   const [papel, setPapel] = useState<PapelFuncionario>("recepcionista");
   const [gradeIds, setGradeIds] = useState<string[]>([]);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
   const [criando, setCriando] = useState(false);
 
   const precisaDeGrade = papel === "atendente";
@@ -118,7 +112,7 @@ function ModalCriarFuncionario({
     if (precisaDeGrade && gradeIds.length === 0) return;
     setCriando(true);
     try {
-      await onCriar({ nome: nome.trim(), email: email.trim(), senha, papel, gradeIds });
+      await onCriar({ nome: nome.trim(), email: email.trim(), papel, gradeIds });
     } finally {
       setCriando(false);
     }
@@ -152,10 +146,6 @@ function ModalCriarFuncionario({
           <label>
             Email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label>
-            Senha
-            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
           </label>
           <button type="submit" disabled={criando || (precisaDeGrade && grades.length === 0)}>{criando ? "Criando…" : "Criar"}</button>
         </form>
@@ -191,7 +181,7 @@ export default function Usuarios() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario.unidadeId]);
 
-  async function salvarUsuario(dados: { nome: string; email: string; papel: string; senha?: string; gradeIds: string[] }) {
+  async function salvarUsuario(dados: { nome: string; email: string; papel: string; gradeIds: string[] }) {
     if (!editando) return;
     try {
       await api.atualizarUsuario(editando.id, dados);
@@ -203,7 +193,7 @@ export default function Usuarios() {
     }
   }
 
-  async function criarFuncionario(dados: { nome: string; email: string; senha: string; papel: PapelFuncionario; gradeIds: string[] }) {
+  async function criarFuncionario(dados: { nome: string; email: string; papel: PapelFuncionario; gradeIds: string[] }) {
     // A unidade vem da primeira grade escolhida (todo mundo aqui é da mesma secretaria, mas
     // uma grade pertence a UMA unidade só) — pra recepcionista sem nenhuma grade marcada,
     // não dá pra criar por aqui sem saber a unidade; nesse caso pede pelo menos uma mesmo
@@ -215,7 +205,7 @@ export default function Usuarios() {
     }
     try {
       await api.criarFuncionario(unidadeID, {
-        nome: dados.nome, email: dados.email, senha: dados.senha, papel: dados.papel,
+        nome: dados.nome, email: dados.email, papel: dados.papel,
         gradeIds: dados.gradeIds,
       });
       notificar("Funcionário criado.");

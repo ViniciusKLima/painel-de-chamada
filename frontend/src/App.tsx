@@ -16,7 +16,7 @@ import Prefeituras from "./telas/admin/Prefeituras";
 import PrefeituraLayout from "./telas/admin/prefeitura/PrefeituraLayout";
 import PrefeituraDashboard from "./telas/admin/prefeitura/PrefeituraDashboard";
 import PrefeituraUsuarios from "./telas/admin/prefeitura/PrefeituraUsuarios";
-import PrefeituraSettings from "./telas/admin/prefeitura/PrefeituraSettings";
+import PrefeituraConfiguracoes from "./telas/admin/prefeitura/PrefeituraConfiguracoes";
 import PrefeituraPaineis from "./telas/admin/prefeitura/PrefeituraPaineis";
 
 export default function App() {
@@ -31,7 +31,7 @@ export default function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<PrefeituraDashboard />} />
           <Route path="usuarios" element={<PrefeituraUsuarios />} />
-          <Route path="settings" element={<PrefeituraSettings />} />
+          <Route path="configuracoes" element={<PrefeituraConfiguracoes />} />
           <Route path="paineis" element={<PrefeituraPaineis />} />
         </Route>
       </Route>

@@ -5,29 +5,24 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var ErrSessaoInvalida = errors.New("sessao invalida")
 
-func HashSenha(senha string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(senha), bcrypt.DefaultCost)
-	return string(b), err
-}
-
-func VerificarSenha(hash, senha string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(senha)) == nil
-}
+// HashSenha/VerificarSenha REMOVIDAS (22/10, junto com o login por senha — ver
+// controllers/auth.go) — a única forma de autenticar agora é o SSO via portal. A dependência
+// `golang.org/x/crypto/bcrypt`, que só existia pra isso, também saiu do go.mod.
 
 type SessaoClaims struct {
 	UsuarioID string `json:"sub"`
 	jwt.RegisteredClaims
 }
 
-// Sessão própria do painel — não confundir com o SSO real da plataforma (adiado pro
-// pós-MVP, ver skill auth-conecta-cidades). Papel/situação do usuário NÃO ficam aqui:
-// são relidos do banco a cada requisição (ver middleware), pra uma promoção ou
-// desativação valer na hora, sem esperar o token expirar.
+// Sessão própria do painel — criada tanto pelo login via portal (SSO, skill
+// auth-conecta-cidades) quanto, no histórico deste arquivo, pelo antigo login por senha
+// (removido 22/10). Papel/situação do usuário NÃO ficam aqui: são relidos do banco a cada
+// requisição (ver middleware), pra uma promoção ou desativação valer na hora, sem esperar o
+// token expirar.
 func CriarSessao(segredo []byte, usuarioID string, duracao time.Duration) (string, error) {
 	claims := SessaoClaims{
 		UsuarioID: usuarioID,

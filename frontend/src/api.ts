@@ -255,15 +255,6 @@ export interface ChamadaPainel {
   chamadoEm: string;
 }
 
-// Item do "modo aguardando" (23/09) — pessoa já chamada, ainda não atendida/ausente/órfã,
-// mas fora da exibição de destaque normal (a janela de 30s/15s já passou). Só narração e
-// countdown pertencem à `chamadaAtual`; isto aqui é puramente visual.
-export interface ItemAguardando {
-  protocolo: string;
-  nome: string;
-  guiche: string;
-}
-
 export interface RespostaPainel {
   // Chave "unidade" mantida por compatibilidade — na prática, desde a grade (22/09), é a
   // grade que está sendo exibida (nome já vem combinado "Unidade — Grade" quando não é a
@@ -283,8 +274,6 @@ export interface RespostaPainel {
     expiraEm: string;
     duracaoTotalSegundos: number;
   } | null;
-  // Só vem preenchido quando chamadaAtual é nulo (ver handlers.GetPainel) — até 3 pessoas.
-  aguardando: ItemAguardando[];
   ultimasChamadas: ChamadaPainel[];
 }
 
@@ -371,7 +360,10 @@ export interface ResumoAdmin {
 }
 
 export const api = {
-  login: (email: string, senha: string) => request<Usuario>("/api/v1/login", { method: "POST", body: JSON.stringify({ email, senha }) }),
+  // Login por senha REMOVIDO (22/10) — login integrado via portal (SSO real da Conecta
+  // Cidades) é a ÚNICA forma de entrar agora, ver skill auth-conecta-cidades. `credencial` é
+  // o `?token=` lido da URL quando a pessoa chega vinda do portal da prefeitura.
+  loginPortal: (credencial: string) => request<Usuario>("/api/v1/sessao/portal", { method: "POST", body: JSON.stringify({ credencial }) }),
   sessao: () => request<Usuario>("/api/v1/sessao"),
   sair: () => request<void>("/api/v1/sessao", { method: "DELETE" }),
 
@@ -390,7 +382,7 @@ export const api = {
   gradesDaUnidade: (unidadeId: string) => request<Grade[]>(`/api/v1/unidades/${unidadeId}/grades`),
   usuarios: (secretariaId: string) => request<UsuarioInterno[]>(`/api/v1/secretarias/${secretariaId}/usuarios`),
   unidadesDaSecretaria: (secretariaId: string) => request<Unidade[]>(`/api/v1/secretarias/${secretariaId}/unidades`),
-  atualizarUsuario: (usuarioId: string, dados: { nome: string; email: string; papel: string; senha?: string; gradeIds: string[] }) =>
+  atualizarUsuario: (usuarioId: string, dados: { nome: string; email: string; papel: string; gradeIds: string[] }) =>
     request<UsuarioInterno>(`/api/v1/usuarios/${usuarioId}`, { method: "PATCH", body: JSON.stringify(dados) }),
   excluirUsuario: (usuarioId: string) => request(`/api/v1/usuarios/${usuarioId}`, { method: "DELETE" }),
   reativarUsuario: (usuarioId: string) => request<UsuarioInterno>(`/api/v1/usuarios/${usuarioId}/reativar`, { method: "POST" }),
@@ -499,9 +491,11 @@ export const api = {
   // de planilha real importada nem expor dado de cidadão de verdade (16/10).
   gerarDadosDemo: (prefeituraId: string) =>
     request<{ ok: boolean; gerados: number }>(`/api/v1/prefeituras/${prefeituraId}/demo/gerar`, { method: "POST" }),
-  criarGestor: (secretariaId: string, dados: { nome: string; email: string; senha: string }) =>
+  // Sem senha (22/10) — pré-provisiona o registro; a pessoa entra de verdade pela primeira
+  // vez via SSO, que completa o vínculo pelo e-mail (ver skill auth-conecta-cidades).
+  criarGestor: (secretariaId: string, dados: { nome: string; email: string }) =>
     request<UsuarioInterno>(`/api/v1/secretarias/${secretariaId}/gestores`, { method: "POST", body: JSON.stringify(dados) }),
-  criarFuncionario: (unidadeId: string, dados: { nome: string; email: string; senha: string; papel: "atendente" | "recepcionista"; gradeIds: string[] }) =>
+  criarFuncionario: (unidadeId: string, dados: { nome: string; email: string; papel: "atendente" | "recepcionista"; gradeIds: string[] }) =>
     request<UsuarioInterno>(`/api/v1/unidades/${unidadeId}/funcionarios`, { method: "POST", body: JSON.stringify(dados) }),
   usuariosInternosAdmin: () => request<UsuarioAdmin[]>("/api/v1/admin/usuarios"),
 

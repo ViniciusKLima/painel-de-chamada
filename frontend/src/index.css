@@ -100,11 +100,50 @@
    longa e uma curta, dava pra ver o conteúdo pular de lugar. `scrollbar-gutter: stable`
    sozinho não se mostrou confiável no elemento raiz (testado ao vivo — o gutter colapsava
    de volta assim que o conteúdo cabia sem rolar); `overflow-y: scroll` é a técnica clássica
-   que garante o espaço reservado sempre, em qualquer navegador. */
+   que garante o espaço reservado sempre, em qualquer navegador.
+
+   Bug real corrigido (20/10): como o espaço fica reservado em TODA tela (inclusive as que
+   nunca têm nada pra rolar, como o login), a barra clássica do Windows renderizava sempre
+   cheia/com setinhas — parecia uma barra "quebrada" ou esquecida, em vez de uma barra de
+   verdade. Reclamação direta: "aquele scroll que não está sendo usado e fica fixo". Fix:
+   a barra em si fica transparente em repouso (track e thumb), sem as setinhas clássicas —
+   o espaço continua reservado (resolve o pulo), mas não aparece nada visível até o mouse
+   passar bem em cima dela, onde ela escurece, confirmando que ainda é arrastável numa tela
+   que realmente tem conteúdo pra rolar. Firefox não suporta esse hover (`::-webkit-*` é
+   só Chromium) — fica só transparente o tempo todo lá, sem o reveal, efeito colateral
+   aceitável. Confirmado ao vivo (20/10): gutter continua reservado (10px, medido via
+   innerWidth - clientWidth) e o scroll de verdade funciona (mouse wheel testado numa página
+   forçada a ter overflow). O hover-reveal em si não foi confirmado visualmente — mouse
+   sintético via automação de navegador não registra hover em cima do scrollbar nativo do
+   SO (mesma limitação de automação já documentada nesta sessão pra clique sintético) — é só
+   um bônus cosmético, não afeta a reserva de espaço nem o scroll em si. */
 html {
   overflow-y: scroll;
   overflow-x: hidden;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+html::-webkit-scrollbar {
+  width: 10px;
+}
+
+html::-webkit-scrollbar-button {
+  display: none;
+}
+
+html::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: var(--cor-borda);
 }
 
 body {
@@ -336,27 +375,81 @@ form.cartao button {
   margin-top: var(--espaco-2);
 }
 
-.acessos-rapidos {
+/* Tela "acesse pelo portal" (22/10) — único estado da tela de login fora do carregamento via
+   SSO (ver Login.tsx): substituiu tanto o antigo form de email/senha quanto os botões de
+   acesso rápido de rodadas anteriores (`.acessos-rapidos`/`.acesso-secundario`, removidas
+   daqui por ficarem órfãs — login por senha não existe mais, ver skill auth-conecta-cidades).
+   Layout lado a lado (empilha em mobile via a regra geral de `.tela-central`/flex-wrap). */
+.acesso-portal {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-5);
+  max-width: 560px;
+  flex-wrap: wrap;
+  justify-content: center;
+  text-align: left;
+}
+
+.acesso-portal-texto {
+  max-width: 340px;
+}
+
+.acesso-portal-texto h1 {
+  margin-top: 0;
+  margin-bottom: var(--espaco-2);
+}
+
+.acesso-portal-texto p {
+  margin: 0 0 var(--espaco-2);
+  color: var(--cor-texto-suave);
+}
+
+/* "Painel de TV sem sinal" (pedido explícito do dono do produto) — reaproveita o tema do
+   próprio produto (um sistema de painel de chamada) até no aviso de acesso. Ruído estático
+   animado via CSS puro (sem imagem/GIF): duas camadas de repeating-gradient com jitter em
+   `steps()` pra ficar "chiando", não suave — é disso que vem a sensação de estática de TV. */
+.tv-sem-sinal {
+  flex-shrink: 0;
+  width: 160px;
+  height: 120px;
+  border-radius: var(--raio-cartao);
+  background:
+    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.07) 0px, rgba(255, 255, 255, 0.07) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(170deg, rgba(255, 255, 255, 0.05) 0px, rgba(255, 255, 255, 0.05) 2px, transparent 2px, transparent 5px),
+    linear-gradient(135deg, #1b2730, #0a141a);
+  background-size: 7px 7px, 11px 11px, 100% 100%;
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: var(--espaco-4);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.6), 0 10px 26px rgba(14, 46, 56, 0.22);
+  animation: tv-chiar 0.5s steps(5) infinite;
 }
 
-.acessos-rapidos button {
-  padding: 13px;
-  font-size: 1.02rem;
+.tv-sem-sinal-legenda {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.acesso-secundario {
-  background: none;
-  color: var(--cor-primaria);
-  border: 1px dashed var(--cor-borda);
-  margin-top: 4px;
+@keyframes tv-chiar {
+  0% {
+    background-position: 0 0, 0 0, 0 0;
+  }
+  100% {
+    background-position: 7px -11px, -11px 9px, 0 0;
+  }
 }
 
-.acesso-secundario:not(:disabled):hover {
-  background: var(--cor-info-fundo);
+@media (prefers-reduced-motion: reduce) {
+  .tv-sem-sinal {
+    animation: none;
+  }
 }
 
 .pagina {
@@ -643,34 +736,14 @@ tbody tr:hover {
    uma coluna de letras soltas por uma fração de segundo. Ao entrar, a caixa cresce PRIMEIRO
    e só depois o texto aparece (opacity com delay); ao sair, o texto some PRIMEIRO e só
    depois a caixa encolhe. */
-/* modo-aguardando (23/09) reaproveita a mesma proporção 70/30 do modo-ativo pro espaço geral
-   — só muda o QUE aparece dentro de .chamada-atual (ver PainelTV.tsx: um .aguardando-grade
-   com até 4 blocos). Ajustado depois (mesma rodada): os blocos não devem viver "dentro" de
-   um cartão branco único — cada um É seu próprio cartão branco independente, direto sobre o
-   fundo tintado (pedido explícito: "não quero eles sendo um bloco dentro do bloco branco,
-   quero que eles sejam blocos brancos independentes"). Por isso .chamada-atual, no modo
-   aguardando, perde o próprio fundo/borda/sombra/padding (vira só um contêiner de
-   posicionamento) — quem carrega a aparência de cartão agora é cada .aguardando-bloco. */
-.painel-tv-corpo.modo-ativo .chamada-atual,
-.painel-tv-corpo.modo-aguardando .chamada-atual {
+.painel-tv-corpo.modo-ativo .chamada-atual {
   flex: 0 0 66%;
   opacity: 1;
+  padding: clamp(20px, 3vw, 56px);
   transition: flex-basis 0.5s ease, padding 0.5s ease, opacity 0.35s ease 0.3s;
 }
 
-.painel-tv-corpo.modo-ativo .chamada-atual {
-  padding: clamp(20px, 3vw, 56px);
-}
-
-.painel-tv-corpo.modo-aguardando .chamada-atual {
-  padding: 0;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.painel-tv-corpo.modo-ativo .historico,
-.painel-tv-corpo.modo-aguardando .historico {
+.painel-tv-corpo.modo-ativo .historico {
   flex: 0 0 32%;
   margin: 0;
 }
@@ -757,77 +830,6 @@ tbody tr:hover {
   font-size: clamp(1.3rem, 3vw, 2rem);
   color: var(--painel-texto-suave);
 }
-
-/* Modo "aguardando" (23/09, pedido do dono do produto): quando não há nenhuma chamada nova
-   em destaque, até 4 pessoas já chamadas (não órfãs, ainda dentro do prazo) ficam visíveis
-   como blocos aqui em vez de simplesmente desaparecer pra tabela — sem narração, sem barra
-   de tempo (não há "exibição" com prazo pra essas, só presença contínua enquanto o
-   atendente ainda está esperando por elas).
-   Layout ajustado 23/09 (pedido explícito de arranjo por quantidade): 1 pessoa ocupa tudo;
-   2 empilham numa coluna só, mais recente em cima (PainelTV.tsx já inverte a ordem antes de
-   renderizar); 3 ficam 1 em cima (ocupando a largura toda) + 2 embaixo lado a lado; 4 viram
-   uma grade 2x2. Cada bloco reaproveita as classes da tabela padrão pro protocolo/guichê
-   (historico-protocolo/historico-guiche-pill, ver PainelTV.tsx) — nome, protocolo e guichê
-   empilhados em coluna dentro do bloco ("mesma estrutura do padrão", não uma tipografia
-   bespoke). O tamanho do texto se adapta à quantidade via as classes
-   aguardando-grade-1/2/3/4 abaixo — uma pessoa sozinha ganha mais destaque do que quando 4
-   dividem o espaço. */
-.aguardando-grade {
-  display: grid;
-  gap: clamp(12px, 2vw, 28px);
-  width: 100%;
-  height: 100%;
-}
-
-.aguardando-grade-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-.aguardando-grade-2 { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-.aguardando-grade-3,
-.aguardando-grade-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-
-/* 3 pessoas: a primeira (mais recente) ocupa a linha de cima inteira; as outras duas ficam
-   lado a lado embaixo — grade normal de 2 colunas cobriria só metade da largura na 1ª. */
-.aguardando-grade-3 .aguardando-bloco:nth-child(1) {
-  grid-column: 1 / span 2;
-}
-
-.aguardando-bloco {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: clamp(14px, 1.8vw, 28px);
-  border-radius: var(--raio-modal);
-  /* Cartão branco independente (23/09), mesmo tratamento visual de .chamada-atual/.historico
-     — não é mais um tile colorido dentro de um cartão maior. */
-  background: var(--painel-card);
-  border: 1px solid var(--painel-borda);
-  box-shadow: var(--painel-sombra);
-  text-align: center;
-}
-
-.aguardando-nome {
-  font-weight: 700;
-  line-height: 1.2;
-  overflow-wrap: break-word;
-  max-width: 100%;
-}
-
-.aguardando-grade-1 .aguardando-nome { font-size: clamp(1.6rem, 4.2vw, 3rem); }
-.aguardando-grade-2 .aguardando-nome { font-size: clamp(1.3rem, 3.2vw, 2.2rem); }
-.aguardando-grade-3 .aguardando-nome { font-size: clamp(1.1rem, 2.6vw, 1.7rem); }
-.aguardando-grade-4 .aguardando-nome { font-size: clamp(0.95rem, 1.9vw, 1.35rem); }
-
-/* Protocolo/guichê dentro do bloco reaproveitam historico-protocolo/historico-guiche-pill —
-   os dois usam tamanho relativo (em/1.05em/0.95em) ao font-size do elemento pai, então basta
-   ajustar o font-size do PRÓPRIO bloco por quantidade pra tudo escalar junto. */
-.aguardando-grade-1 .aguardando-bloco { font-size: clamp(1rem, 2vw, 1.4rem); }
-.aguardando-grade-2 .aguardando-bloco { font-size: clamp(0.9rem, 1.6vw, 1.15rem); }
-.aguardando-grade-3 .aguardando-bloco { font-size: clamp(0.82rem, 1.4vw, 1rem); }
-.aguardando-grade-4 .aguardando-bloco { font-size: clamp(0.72rem, 1.2vw, 0.88rem); }
 
 /* Barra de contagem regressiva (22/09) — encolhe de 100% a 0% ao longo da duração real da
    exibição (ver PainelTV.tsx, BarraTempo). scaleX em vez de width: anima na GPU, sem
@@ -1031,6 +1033,12 @@ tbody tr:hover {
   grid-template-columns: 1.6fr 1fr;
   grid-template-rows: auto 1fr;
   gap: var(--espaco-4);
+}
+
+/* Recepção (20/10) — mesmo padrão "sem moldura" já usado no atendente desde 21/09, sem
+   grid (é um bloco só, não 3) — só o respiro embaixo que o `.cartao` antigo dava. */
+.bloco-recepcao {
+  margin-bottom: var(--espaco-4);
 }
 
 .bloco-chamando {
@@ -1317,7 +1325,15 @@ tbody tr:hover {
   margin-bottom: var(--espaco-3);
 }
 
+/* `.aba` é usada tanto em `<button>` (Recepção/Sala de espera, trocam lista sem navegar) quanto
+   em `<NavLink>`/`<a>` (abas da configuração de prefeitura no admin, 20/10 — navegação de
+   verdade entre sub-rotas) — por isso declara o próprio layout (`inline-flex`/`gap`) em vez de
+   depender do `display:inline-flex` global de `button`, que um `<a>` não herda, e remove o
+   sublinhado padrão de link. */
 .aba {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   color: var(--cor-texto-suave);
   border: none;
@@ -1326,6 +1342,7 @@ tbody tr:hover {
   margin-right: var(--espaco-5);
   border-bottom: 2px solid transparent;
   font-weight: 600;
+  text-decoration: none;
 }
 
 /* Correção 23/09: a rodada anterior (22/09) só resolveu a especificidade pro `color`, mas

@@ -19,8 +19,8 @@ detalhe. Carregam automaticamente em qualquer sessão futura neste projeto.
 - `stack-go-react-postgres` — bibliotecas e convenções
 - `importacao-planilha` — mapeamento de colunas real da planilha → schema
 - `painel-tv` — tela pública de exibição de chamadas
-- `auth-login-mvp` — login real do MVP (email+senha, sem SSO)
-- `auth-conecta-cidades` — fluxo real de SSO (JWT via URL → cookie de sessão), **adiado pro pós-MVP**
+- `auth-login-mvp` — **OBSOLETA (22/10)**, login por senha foi removido por completo; mantida só como registro histórico
+- `auth-conecta-cidades` — fluxo real de SSO (JWT via URL → cookie de sessão) — **implementado e é o único método de login desde 22/10**
 - `api-conecta-cidades` — API externa de agendamentos da plataforma (limitações e uso)
 - `identidade-visual` — paleta, tipografia, espaçamento e regras de layout do frontend (cabeçalho, tabelas, botões)
 
@@ -2566,6 +2566,117 @@ diretamente pelo dono do produto como correto, não é mais suposição.
 (dados estáticos, pra demonstrar sem depender de dado real) — ainda sem desenho, uma
 pergunta de esclarecimento foi feita antes de implementar (ver skill `auth-conecta-cidades`
 se isso evoluir, ou uma skill nova se o escopo crescer).
+
+## SSO: confirmação oficial direto do Jaboatão + arquivo do Léo não é da Conecta Cidades (22/10)
+
+O dono do produto recebeu do Léo (equipe dele, não da plataforma) um arquivo `autenticacao.md`
+que ele achou que fosse a especificação real da Conecta Cidades — investigado antes de usar
+(stack diferente da nossa, nomes genéricos "organização", referencia `.specify/memory/
+constitution.md` que é do NOSSO spec-kit, e principalmente **não menciona a introspection
+obrigatória**). Conclusão: não é documentação da plataforma, é algum template genérico que o
+Léo tem — sinalizado ao dono do produto, que vai confirmar diretamente com ele antes de decidir
+o que fazer com aquele arquivo.
+
+Na sequência, lemos a documentação pública **do próprio Jaboatão** (não mais de outro município
+como antes) em `jaboataomaisfacil.jaboatao.pe.gov.br/docs/integracoes` — confirma 100% do que
+já estava desenhado (incluindo a introspection obrigatória), sem nenhuma contradição, e
+adiciona: regra exata do `aud` (hostname puro, sem protocolo/caminho/query), a chave pública
+RSA real de Jaboatão (publicada em texto na doc, mas a doc recomenda usar o JWKS em vez de
+fixá-la), o schema completo de erro do `/oauth/introspect` (400/401/429) e os limites de rate
+limit por token de API (300/min, 30000/dia, janela diária zera 00:00 UTC). Spec completo salvo
+em `_docs-externas/conecta-cidades-integracoes-jaboatao.yaml`. Detalhe na skill
+`auth-conecta-cidades`, seção "Confirmação final: doc oficial do PRÓPRIO Jaboatão".
+
+## SSO implementado de verdade (22/10, mesmo dia) — decisão de 19/09 (pós-MVP) revertida
+
+O Léo confirmou e mandou um token de API real com a permissão `introspect_api` — testado
+contra o endpoint de produção da Conecta Cidades (`200 {"active":false}` pra um token
+inválido de propósito, confirmando a credencial em si). Com isso nada mais bloqueava
+tecnicamente o SSO, e o dono do produto pediu implementação imediata: **"pode meter
+marcha!!!!! agora sim!!!!"** — login via portal deixou de ser pós-MVP e foi implementado
+na hora.
+
+Backend: `internal/auth/{jwks,portal,introspect}.go` (novo) implementam a ordem de validação
+inteira da doc oficial — ler `iss` sem confiar, resolver prefeitura, verificar assinatura
+RS256 contra o JWKS real do emissor, mapear papel, **introspecção obrigatória**, resolver
+secretaria/unidade via `mapeamento_externo`, upsert de usuário, sessão própria. Endpoint novo
+`POST /api/v1/sessao/portal`. 10 testes automatizados cobrindo a criptografia (token válido,
+aud/iss/exp errados, assinatura forjada, algoritmo simétrico recusado) contra uma chave RSA
+gerada na hora (não dá pra testar contra a chave privada real deles). Testado também contra a
+JWKS REAL da Smartândia (busca de prefeitura por emissor + fetch/parsing da chave pública
+real funcionando, recusando corretamente um token com assinatura/kid falsos).
+
+**Bug real corrigido no processo, achado testando**: um `kid` desconhecido numa busca FRESCA
+do JWKS estava caindo como "serviço indisponível" (503) em vez de "credencial inválida"
+(401) — corrigido distinguindo os dois casos (`ErrChaveDesconhecida` vs
+`ErrJWKSIndisponivel`).
+
+**Outro bug real, sem relação direta com SSO**: descoberto que `.env` nunca foi de fato
+carregado pelo processo Go (só "funcionava" porque os defaults no código coincidiam com o
+arquivo) — ficou visível ao adicionar uma variável sem default seguro
+(`CONECTA_INTROSPECT_API_TOKEN`). Corrigido com `godotenv.Load()` no início de `main()`.
+
+Frontend: `Login.tsx` lê `?token=` da URL (login por senha continua existindo, os dois
+convivem), `api.ts` ganhou `loginPortal`.
+
+**Pendente, não é mais bloqueio técnico, é só teste final**: um login completo com token
+REAL gerado na hora pela Smartândia (precisa de alguém logar lá — token só vale 30s, não dá
+pra reaproveitar um salvo) pra confirmar assinatura real + introspecção real + criação de
+usuário de ponta a ponta. `mapeamento_externo` está vazio no banco (só dá pra testar `admin`
+por enquanto, que não precisa de vínculo). `CONECTA_AUDIENCIA` ainda vazio no `.env`.
+Detalhe completo na skill `auth-conecta-cidades`, seção "Implementação real (22/10)".
+
+**Revisão de segurança automática, logo em seguida, mesmo dia**: achou 3 problemas reais de
+isolamento multi-tenant/autenticação na implementação recém-feita — todos corrigidos na hora,
+com migration nova (`000011_sso_escopo_tenant`) e 5 testes automatizados cobrindo os 3
+cenários. Resumo: `usuarios.external_sub` (o ID do servidor na Conecta Cidades) era único
+GLOBALMENTE, mas é um ID por-município — duas prefeituras diferentes podiam colidir na mesma
+conta; `mapeamento_externo` tinha o mesmo problema pra secretaria/unidade; e a checagem de
+`aud` do token falhava ABERTA (pulava a checagem) quando `CONECTA_AUDIENCIA` estava vazio, em
+vez de recusar — os 3 corrigidos pra falhar FECHADO. Detalhe completo na skill
+`auth-conecta-cidades`, seção "Revisão de segurança, mesmo dia (22/10)".
+
+## Login por senha removido por completo, SSO vira o único método (22/10, mesma sessão)
+
+Pedido direto do dono do produto, logo depois de ver o SSO funcionando: **"isso mesmo, derrube
+toda aquela autenticação antiga que tinhamos feito e suba apenas com o metodo jwt"**. Diferente
+do que a rodada anterior registrou (os dois métodos convivendo em paralelo), o login por
+email+senha foi removido por completo — não ficou como fallback.
+
+**`CONECTA_AUDIENCIA` confirmado e preenchido** no processo, com um token real gerado na hora
+pelo dono do produto na Smartândia: `painel-de-chamada-kappa.vercel.app` (domínio Vercel do
+frontend). O endpoint de SSO deixou de estar 503 por audiência vazia.
+
+**Backend**: removidos `PostLogin`/`corpoLogin`, a rota `POST /api/v1/login`,
+`auth.HashSenha`/`auth.VerificarSenha` (bcrypt) e a dependência `golang.org/x/crypto/bcrypt`
+(demovida pra indireta no `go.mod`), o campo `SenhaHash` de `domain.Usuario`, e toda
+leitura/escrita de `senha_hash` no repository e nos controllers que criam/editam usuário. A
+coluna `usuarios.senha_hash` continua existindo no banco (não lida/escrita por nada) — não
+valia uma migration só pra isso. Criar um gestor/atendente/recepcionista virou
+"pré-provisionar": só cria o registro, a identidade real se liga a ele no primeiro login SSO
+(match por `external_sub`/e-mail verificado).
+
+**Frontend**: `Login.tsx` reescrito sem formulário nenhum — só "entrando pelo portal…" (quando
+chega com `?token=`) e uma tela única de fallback (sem token, token inválido, sessão
+expirada/trocada), visual de "painel de TV sem sinal" com a mensagem "Acesse pelo portal da sua
+prefeitura". Campos de senha removidos dos formulários de criar/editar usuário do gestor e do
+admin.
+
+**Verificado ao vivo**: `POST /api/v1/login` → 404 (rota não existe mais);
+`POST /api/v1/sessao/portal` com credencial inválida → 401 (SSO continua respondendo
+normalmente). `go build`/`go vet`/`gofmt`/`go test ./...` e `tsc --noEmit`/`npm run build`
+limpos.
+
+⚠️ **Consequência real, ainda sem solução definida, sinalizada mas não resolvida**: o papel
+`admin` é explicitamente bloqueado no SSO (escalação de privilégio entre tenants — ver skill
+`auth-conecta-cidades`, seção 6) — e com o login por senha também removido, **não existe mais
+nenhum caminho de UI pra chegar em `/admin`**. Precisa de uma decisão do dono do produto: um
+mecanismo de acesso de emergência separado, reconsiderar o bloqueio pra um caso bem delimitado,
+ou aceitar que por enquanto só dá pra promover alguém a admin direto no banco. Nenhum código foi
+escrito em cima disso ainda.
+
+Skill `auth-login-mvp` marcada como obsoleta (mantida só como registro histórico); skill
+`auth-conecta-cidades` atualizada com a seção "Login por senha removido por completo".
 
 ## Decisões em aberto (consolidado — atualizado 19/09)
 

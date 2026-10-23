@@ -97,48 +97,33 @@ do novo layout de tabela. Tipografia continua `Public Sans`/`IBM Plex Mono` (mes
 do site) — decisão explícita de não usar uma fonte "clássica"/genérica só pro painel.
 Verificado ao vivo no Chrome nos dois modos (chamada ativa e descanso).
 
-## Modo "aguardando" — terceiro estado do painel, entre ativo e descanso (23/09)
+## Modo "aguardando" — introduzido 23/09, REMOVIDO 20/10
 
-Pedido do dono do produto depois de ver o painel em uso: quando a exibição de uma chamada
-(30s/15s, ver seção anterior) expirava, a pessoa desaparecia do destaque e ia direto pra
-tabela — mas o atendente muitas vezes ainda estava genuinamente esperando por ela (dentro do
-cooldown, ainda não virou órfã). Ficava estranho sumir do destaque só porque o TEMPO DE
-EXIBIÇÃO acabou, quando a pessoa continua sendo esperada de verdade.
+Existiu um terceiro estado do painel (entre ativo e descanso): quando a exibição de uma
+chamada (30s/15s) expirava e o atendente ainda estava genuinamente esperando a pessoa (dentro
+do cooldown, não órfã), ela ficava visível em destaque indefinidamente em vez de cair pra
+tabela — até ser marcada ou o atendente chamar outra. **Removido a pedido do dono do produto
+(20/10)**: "fica parecendo que travou a tela" — passados os 30s normais, continuar vendo a
+mesma pessoa parada em destaque dava a impressão de painel travado, não de alguém sendo
+esperado.
 
-**Desenho**: um terceiro modo, só ativado quando a fila de exibição em memória está vazia
-(`Atual()` retornou nil — nenhuma chamada NOVA pra anunciar agora). Nesse caso, o backend
-consulta separadamente (`ListarAguardandoExibicao`, sem tocar na fila de exibição em memória)
-até 3 agendamentos com status `chamado`, **não órfãos**, ordenados pela chamada mais antiga
-primeiro, e devolve em `aguardando` na resposta de `GET /painel/{gradeId}`. Regras
-importantes:
+**Como ficou**: só dois modos de novo — ativo (chamada nova em destaque, com narração/barra de
+tempo) e descanso (tabela cheia). Assim que a exibição de 30s/15s expira, a pessoa cai direto
+pra "últimas chamadas" **sem nenhuma exclusão** — ela já aparece lá mesmo enquanto ainda está
+em destaque (não precisa mais esperar o destaque esvaziar). O ícone cinza (ver abaixo)
+continua sendo o que distingue visualmente "ainda dentro do prazo" de órfão/atendido/ausente —
+não precisava de um modo à parte pra isso, só do ícone certo na linha certa.
 
-- **Nunca compete com uma chamada nova real** — só aparece quando não há nada novo pra
-  anunciar. Uma chamada nova sempre tem prioridade total (com narração, barra de tempo).
-- **Chamado órfão NUNCA aparece aqui** — "se estiver órfão não fica no painel" (pedido
-  explícito). Órfão continua só na tabela de últimas chamadas, com o ícone âmbar de sempre
-  (ver seção de ícones abaixo) — ele já não é mais "alguém que o atendente está esperando
-  normalmente", é alguém que precisa que outro atendente assuma.
-- **Sem narração, sem barra de contagem** — é presença visual pura, não uma "chamada" no
-  sentido de evento sonoro. `PainelTV.tsx` nunca chama `iniciarAnuncio` pros itens de
-  `aguardando`.
-- **Até 4 blocos, arranjo específico por quantidade** (23/09, `aguardando-grade-1/2/3/4` em
-  `index.css`, CSS Grid): 1 ocupa tudo; 2 empilham numa coluna só (mais recente em cima); 3
-  ficam com a mais recente em cima (largura toda) + as outras duas lado a lado embaixo; 4
-  viram uma grade 2x2. Ordem sempre do mais recente pro mais antigo (`PainelTV.tsx` inverte a
-  lista que o backend devolve — o backend ordena do mais antigo pro mais novo, porque é assim
-  que ele decide quem entra quando há mais candidatos que o limite). Tamanho de fonte adapta
-  à quantidade (bloco sozinho maior que quando 4 dividem o espaço). Nome, protocolo e guichê
-  ficam empilhados em coluna dentro de cada bloco, reaproveitando as mesmas classes CSS da
-  tabela padrão (`historico-protocolo`/`historico-guiche-pill`) em vez de uma tipografia
-  própria — pedido explícito: "mesma estrutura do padrão".
-- **A tabela de últimas chamadas exclui quem estiver no destaque** (a chamada ativa OU os
-  blocos de aguardando) — o backend já filtra isso (`protocolosEmDestaque` em
-  `handlers/painel.go`), o frontend só renderiza o que vier.
+**Removido de vez** (não ficou como código morto): `ListarAguardandoExibicao` e
+`AguardandoExibicao` (`internal/repository/agendamentos.go`), o parâmetro `aguardando` de
+`views.PainelResponse`, o campo `aguardando` da resposta de `GET /painel/{gradeId}` e do tipo
+`RespostaPainel` (frontend), o bloco JSX `emAguardando`/`aguardando-grade` de `PainelTV.tsx`, e
+as classes CSS `.modo-aguardando`/`.aguardando-grade*`/`.aguardando-bloco`/`.aguardando-nome`.
 
-**Ícone cinza novo** (`Clock`, lucide-react) — quarto ícone de status na tabela, pro caso
-"chamado, ainda não apareceu, mas não é órfão" (`ChamadaPainel.ehOrfao === false`). O ícone
-âmbar (`Volume2`) que já existia fica reservado só pra órfão de verdade — antes ele
-representava "chamado" genericamente, sem distinguir os dois casos.
+**Ícone cinza** (`Clock`, lucide-react) — continua existindo e sendo usado, independente do
+modo removido: quarto ícone de status na tabela de últimas chamadas, pro caso "chamado, ainda
+não apareceu, mas não é órfão" (`ChamadaPainel.ehOrfao === false`). O ícone âmbar (`Volume2`)
+fica reservado só pra órfão de verdade.
 
 **Bug real corrigido junto (23/09): "últimas chamadas" mostrava a mesma pessoa duas vezes**
 depois de uma rechamada. Causa: `UltimasChamadas` lia direto o log `chamadas` (uma linha por

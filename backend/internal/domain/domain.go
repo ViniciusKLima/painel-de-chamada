@@ -117,14 +117,22 @@ type Grade struct {
 // Ver internal/auth/permissoes.go pra centralização das regras que usam esses campos —
 // nenhum handler deve comparar esses IDs diretamente, sempre passar pelas funções de lá.
 type Usuario struct {
-	ID             string
-	SecretariaID   *string
-	UnidadeID      *string
-	Nome           string
-	Email          string
-	SenhaHash      *string
-	Papel          Papel
+	ID           string
+	SecretariaID *string
+	UnidadeID    *string
+	Nome         string
+	Email        string
+	// SenhaHash removido (22/10, junto com o login por senha) — a coluna `senha_hash`
+	// continua existindo no banco (não vale a pena uma migration só pra isso), mas nada no
+	// código a lê ou grava mais. Única forma de autenticar agora é o SSO via portal.
+	Papel Papel
+	// ExternalSub/ExternalIssuer (22/10, login via SSO) — a identidade do servidor na
+	// Conecta Cidades só é única DENTRO de um emissor (`sub` é um ID interno por-município,
+	// ex. "42" — duas prefeituras diferentes podem ter um servidor com o mesmo `sub`). Os
+	// dois juntos formam a chave de verdade (ver índice único composto, migration 000011) —
+	// nunca comparar `ExternalSub` sozinho entre tenants.
 	ExternalSub    *string
+	ExternalIssuer *string
 	Ativo          bool
 	UltimoAcessoEm *time.Time
 }

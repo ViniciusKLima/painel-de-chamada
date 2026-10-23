@@ -10,11 +10,12 @@ import { useNotificar } from "../../../componentes/Notificacoes";
 // aqui é só pra nem oferecer o botão numa prefeitura real, não é a única defesa.
 const SLUG_PREFEITURA_DEMO = "smartandia";
 
-// Aba "Settings" da configuração da prefeitura (22/09, reorganizada em abas 23/09) — nome,
-// as duas cores de identidade (destaque + clara, ver skill identidade-visual) e a lista de
-// secretarias dela, com criação rápida. Cabeçalho/voltar/abas vêm de PrefeituraLayout, que
-// envolve esta tela — aqui só o conteúdo da aba em si.
-export default function PrefeituraSettings() {
+// Aba "Configurações" da prefeitura (22/09, reorganizada em abas 23/09; renomeada de
+// "Settings" pra português 20/10 — era o único nome em inglês no nav do admin/gestor, ver
+// skill identidade-visual) — nome, as duas cores de identidade (destaque + clara, ver skill
+// identidade-visual) e a lista de secretarias dela, com criação rápida. Cabeçalho/voltar/
+// abas vêm de PrefeituraLayout, que envolve esta tela — aqui só o conteúdo da aba em si.
+export default function PrefeituraConfiguracoes() {
   const { prefeituraId } = useParams<{ prefeituraId: string }>();
   const notificar = useNotificar();
 

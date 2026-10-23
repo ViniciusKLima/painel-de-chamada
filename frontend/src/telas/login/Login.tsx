@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Tv } from "lucide-react";
 import { api, ApiError } from "../../api";
 import { resetarTema } from "../../tema";
 
-// Login real de verdade (22/09) — voltou a ser email+senha (era um acesso rápido por botão,
-// desde 20/09, porque na época o dono do produto disse "esse login não vai ser usado", com o
-// SSO real da plataforma previsto pro pós-MVP). Pedido explícito agora, depois da tela de
-// Admin: contas são criadas só pela gestão (admin cria gestor, gestor/admin criam
-// atendente/recepcionista — ver telas do Admin) — não existe cadastro nenhum aqui, de
-// propósito. O mecanismo de sessão em si nunca mudou (cookie HttpOnly via
-// POST /api/v1/login), só a UI que chega até ele.
+// Login por e-mail+senha REMOVIDO POR COMPLETO (22/10, pedido direto do dono do produto:
+// "derrube toda aquela autenticação antiga que tinhamos feito e suba apenas com o metodo
+// jwt"). A ÚNICA forma de entrar agora é o login integrado via portal (SSO real da Conecta
+// Cidades, ver skill auth-conecta-cidades) — a prefeitura abre esta tela com `?token=` na
+// URL. Sem esse token (ou com um token inválido/expirado), a tela mostra um aviso fixo
+// pra voltar pelo portal — não existe mais formulário nenhum aqui.
 const DESTINO_POR_PAPEL: Record<string, string> = {
   admin: "/admin",
   gestor: "/gestor",
@@ -21,15 +21,14 @@ const DESTINO_POR_PAPEL: Record<string, string> = {
 // de sessão em api.ts pro porquê disso acontecer (cookie de sessão trocado por outra aba/
 // login no mesmo navegador, ou expirado no meio do uso).
 const MENSAGEM_POR_MOTIVO: Record<string, string> = {
-  expirada: "Sua sessão expirou. Entre novamente.",
-  alterada: "Sua sessão foi encerrada ou substituída por outro login neste navegador. Entre novamente.",
+  expirada: "Sua sessão expirou.",
+  alterada: "Sua sessão foi encerrada ou substituída por outro login neste navegador.",
 };
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Entrando via portal (SSO)? Mostra só "entrando…" enquanto troca o token.
+  const [entrandoViaPortal, setEntrandoViaPortal] = useState(() => new URLSearchParams(window.location.search).has("token"));
   const navigate = useNavigate();
   const [parametros] = useSearchParams();
   const avisoSessao = MENSAGEM_POR_MOTIVO[parametros.get("sessao") ?? ""];
@@ -41,38 +40,55 @@ export default function Login() {
     resetarTema();
   }, []);
 
-  async function entrar(evento: React.FormEvent) {
-    evento.preventDefault();
-    setErro(null);
-    setCarregando(true);
-    try {
-      const usuario = await api.login(email.trim(), senha);
-      navigate(DESTINO_POR_PAPEL[usuario.papel] ?? "/login");
-    } catch (err) {
-      setErro(err instanceof ApiError ? err.message : "Erro ao entrar.");
-    } finally {
-      setCarregando(false);
-    }
+  // Login integrado via portal (ver skill auth-conecta-cidades): a prefeitura abre esta tela
+  // com `?token=<JWT do portal>` na URL. Lido na guarda de entrada da tela (não num
+  // componente aninhado), e a URL é limpa IMEDIATAMENTE — antes mesmo da resposta do backend
+  // chegar — porque a query string fica no histórico do navegador, no `Referer` e em log de
+  // proxy; não pode sobreviver além do instante da troca, sucesso ou falha.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("token");
+    if (!token) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    (async () => {
+      try {
+        const usuario = await api.loginPortal(token);
+        navigate(DESTINO_POR_PAPEL[usuario.papel] ?? "/login", { replace: true });
+      } catch (err) {
+        setErro(err instanceof ApiError ? err.message : "Não foi possível entrar pelo portal.");
+        setEntrandoViaPortal(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (entrandoViaPortal) {
+    return (
+      <div className="tela-central">
+        <div className="cartao">
+          <h1>Painel de Chamada</h1>
+          <p className="dica">Entrando pelo portal…</p>
+        </div>
+      </div>
+    );
   }
 
+  // Tela única pra qualquer caso de entrada que não seja um `?token=` válido: acesso direto
+  // sem token, ou um token que falhou (expirado, inválido, papel sem acesso etc. — `erro`
+  // traz o motivo específico quando veio de uma tentativa real). Visual de "painel de TV sem
+  // sinal" — pedido explícito do dono do produto — reforça o tema do produto em si (um
+  // sistema de painel de chamada) até no próprio aviso de acesso.
   return (
     <div className="tela-central">
-      <div className="cartao">
-        <h1>Painel de Chamada</h1>
-        {avisoSessao && <p className="aviso">{avisoSessao}</p>}
-        <form onSubmit={entrar} className="form-vertical">
-          <label>
-            Email
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={carregando} required autoFocus />
-          </label>
-          <label>
-            Senha
-            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} disabled={carregando} required />
-          </label>
-          <button type="submit" disabled={carregando}>{carregando ? "Entrando…" : "Entrar"}</button>
-        </form>
-        {erro && <p className="erro">{erro}</p>}
-        <p className="dica">Não tem acesso? Fale com o gestor da sua secretaria ou com o administrador da plataforma — não há cadastro por aqui.</p>
+      <div className="acesso-portal">
+        <div className="tv-sem-sinal" aria-hidden="true">
+          <Tv size={40} />
+          <span className="tv-sem-sinal-legenda">SEM SINAL</span>
+        </div>
+        <div className="acesso-portal-texto">
+          <h1>Acesse pelo portal da sua prefeitura</h1>
+          <p>Para entrar no Painel de Chamada, abra o sistema a partir do portal da sua prefeitura.</p>
+          {(avisoSessao || erro) && <p className="dica">{avisoSessao ?? erro}</p>}
+        </div>
       </div>
     </div>
   );

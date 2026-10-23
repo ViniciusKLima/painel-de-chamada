@@ -53,6 +53,15 @@ func (r *Repo) BuscarPrefeituraPorID(ctx context.Context, id string) (*domain.Pr
 	return escanearPrefeitura(row)
 }
 
+// BuscarPrefeituraPorIssuer resolve `iss -> prefeitura` pro login via SSO (skill
+// auth-conecta-cidades, seção 4, passo 3) — comparação EXATA (sem casamento por prefixo, sem
+// palpite por hostname). `issuer` já deve vir normalizado (auth.NormalizarEmissor) pelo
+// chamador, pra bater exatamente com o que foi gravado em `issuer_jwt` no cadastro.
+func (r *Repo) BuscarPrefeituraPorIssuer(ctx context.Context, issuer string) (*domain.Prefeitura, error) {
+	row := r.Pool.QueryRow(ctx, `select `+colunasPrefeitura+` from prefeituras where issuer_jwt = $1`, issuer)
+	return escanearPrefeitura(row)
+}
+
 // slugificar deriva um slug simples a partir do nome (minúsculas, espaço vira hífen) — só
 // pra dar um identificador legível de URL/log; não precisa ser sofisticado no MVP.
 func slugificar(nome string) string {

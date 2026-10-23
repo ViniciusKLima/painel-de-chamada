@@ -12,12 +12,15 @@ import (
 var ErrNaoEncontrado = errors.New("nao encontrado")
 var ErrEmailJaExiste = errors.New("email ja existe")
 
-const colunasUsuario = `id, secretaria_id, unidade_id, nome, email, senha_hash, papel, external_sub, ativo, ultimo_acesso_em`
+// senha_hash não é mais selecionada (22/10) — nada no código lê esse campo desde a remoção
+// do login por senha; a coluna em si fica no banco (migration de drop não vale a pena só
+// por isso), só a aplicação parou de tocar nela.
+const colunasUsuario = `id, secretaria_id, unidade_id, nome, email, papel, external_sub, external_issuer, ativo, ultimo_acesso_em`
 
 func escanearLinhaUsuario(row interface {
 	Scan(dest ...any) error
 }, u *domain.Usuario) error {
-	return row.Scan(&u.ID, &u.SecretariaID, &u.UnidadeID, &u.Nome, &u.Email, &u.SenhaHash, &u.Papel, &u.ExternalSub, &u.Ativo, &u.UltimoAcessoEm)
+	return row.Scan(&u.ID, &u.SecretariaID, &u.UnidadeID, &u.Nome, &u.Email, &u.Papel, &u.ExternalSub, &u.ExternalIssuer, &u.Ativo, &u.UltimoAcessoEm)
 }
 
 // Login busca por email direto, sem escopo nenhum — usuarios.email é único globalmente
@@ -173,7 +176,7 @@ func (r *Repo) ListarUsuariosPorSecretaria(ctx context.Context, secretariaID str
 	rows, err := r.Pool.Query(ctx, `
 		select `+colunasUsuario+` from usuarios where secretaria_id = $1
 		union all
-		select u.id, u.secretaria_id, u.unidade_id, u.nome, u.email, u.senha_hash, u.papel, u.external_sub, u.ativo, u.ultimo_acesso_em
+		select u.id, u.secretaria_id, u.unidade_id, u.nome, u.email, u.papel, u.external_sub, u.external_issuer, u.ativo, u.ultimo_acesso_em
 		from usuarios u
 		join unidades un on un.id = u.unidade_id
 		where un.secretaria_id = $1
@@ -195,15 +198,18 @@ func (r *Repo) ListarUsuariosPorSecretaria(ctx context.Context, secretariaID str
 	return lista, rows.Err()
 }
 
-// NovoUsuario — campos pra criar um usuário interno (admin cria gestor/atendente/
-// recepcionista; ver handlers/admin.go). Exatamente um de SecretariaID/UnidadeID é
-// preenchido dependendo do papel (gestor: secretaria; atendente/recepcionista: unidade) —
-// ver comentário em domain.Usuario. GradeIDs (23/09) substitui a antiga FK única — pode vir
-// vazia (recepcionista sem restrição de grade) ou com uma ou mais.
+// NovoUsuario — campos pra PRÉ-PROVISIONAR um usuário interno (admin/gestor cria gestor/
+// atendente/recepcionista com nome/email/papel/grade, mas SEM senha — 22/10, login por senha
+// removido). O registro criado aqui funciona como uma "reserva de lugar": quando a pessoa
+// loga de verdade pela primeira vez via SSO, `UpsertUsuarioPortal` acha esse registro pelo
+// e-mail (se `email_verified` no token) e completa o vínculo externo nele, em vez de criar
+// um usuário duplicado. Exatamente um de SecretariaID/UnidadeID é preenchido dependendo do
+// papel (gestor: secretaria; atendente/recepcionista: unidade) — ver comentário em
+// domain.Usuario. GradeIDs (23/09) substitui a antiga FK única — pode vir vazia
+// (recepcionista sem restrição de grade) ou com uma ou mais.
 type NovoUsuario struct {
 	Nome         string
 	Email        string
-	SenhaHash    string
 	Papel        domain.Papel
 	SecretariaID *string
 	UnidadeID    *string
@@ -218,10 +224,10 @@ func (r *Repo) CriarUsuario(ctx context.Context, n NovoUsuario) (*domain.Usuario
 	defer tx.Rollback(ctx)
 
 	row := tx.QueryRow(ctx, `
-		insert into usuarios (secretaria_id, unidade_id, nome, email, senha_hash, papel, ativo)
-		values ($1, $2, $3, $4, $5, $6, true)
+		insert into usuarios (secretaria_id, unidade_id, nome, email, papel, ativo)
+		values ($1, $2, $3, $4, $5, true)
 		returning `+colunasUsuario,
-		n.SecretariaID, n.UnidadeID, strings.TrimSpace(n.Nome), strings.TrimSpace(n.Email), n.SenhaHash, n.Papel)
+		n.SecretariaID, n.UnidadeID, strings.TrimSpace(n.Nome), strings.TrimSpace(n.Email), n.Papel)
 	u, err := escanearUsuario(row)
 	if err != nil {
 		if strings.Contains(err.Error(), "usuarios_email_key") {
@@ -253,7 +259,7 @@ type UsuarioComContexto struct {
 }
 
 const colunasUsuarioComContexto = `
-	u.id, u.secretaria_id, u.unidade_id, u.nome, u.email, u.senha_hash, u.papel,
+	u.id, u.secretaria_id, u.unidade_id, u.nome, u.email, u.papel,
 	u.external_sub, u.ativo, u.ultimo_acesso_em,
 	coalesce(p1.nome, p2.nome), coalesce(s1.nome, s2.nome), un.nome
 `
@@ -271,7 +277,7 @@ func escanearUsuarioComContexto(rows interface {
 	Scan(dest ...any) error
 }) (UsuarioComContexto, error) {
 	var u UsuarioComContexto
-	err := rows.Scan(&u.ID, &u.SecretariaID, &u.UnidadeID, &u.Nome, &u.Email, &u.SenhaHash, &u.Papel,
+	err := rows.Scan(&u.ID, &u.SecretariaID, &u.UnidadeID, &u.Nome, &u.Email, &u.Papel,
 		&u.ExternalSub, &u.Ativo, &u.UltimoAcessoEm, &u.PrefeituraNome, &u.SecretariaNome, &u.UnidadeNome)
 	return u, err
 }
@@ -349,14 +355,14 @@ func (r *Repo) ListarUsuariosInternosPorPrefeitura(ctx context.Context, prefeitu
 }
 
 // AtualizacaoUsuario — campos que o gestor/admin pode editar na tela "Usuários internos"
-// (22/09): nome, email, senha (opcional — só troca se vier preenchida) e as grades em que
-// atendente/recepcionista estão alocados (23/09, substitui a FK única por uma lista).
+// (22/09): nome, email, papel e as grades em que atendente/recepcionista estão alocados
+// (23/09, substitui a FK única por uma lista). Senha removida (22/10, login por senha
+// removido por completo — ver skill auth-conecta-cidades).
 type AtualizacaoUsuario struct {
-	Nome          string
-	Email         string
-	Papel         domain.Papel
-	NovaSenhaHash *string
-	GradeIDs      []string
+	Nome     string
+	Email    string
+	Papel    domain.Papel
+	GradeIDs []string
 }
 
 func (r *Repo) AtualizarUsuario(ctx context.Context, usuarioID string, a AtualizacaoUsuario) (*domain.Usuario, error) {
@@ -366,20 +372,11 @@ func (r *Repo) AtualizarUsuario(ctx context.Context, usuarioID string, a Atualiz
 	}
 	defer tx.Rollback(ctx)
 
-	var row pgx.Row
-	if a.NovaSenhaHash != nil {
-		row = tx.QueryRow(ctx, `
-			update usuarios set nome = $2, email = $3, papel = $4, senha_hash = $5
-			where id = $1
-			returning `+colunasUsuario,
-			usuarioID, strings.TrimSpace(a.Nome), strings.TrimSpace(a.Email), a.Papel, *a.NovaSenhaHash)
-	} else {
-		row = tx.QueryRow(ctx, `
-			update usuarios set nome = $2, email = $3, papel = $4
-			where id = $1
-			returning `+colunasUsuario,
-			usuarioID, strings.TrimSpace(a.Nome), strings.TrimSpace(a.Email), a.Papel)
-	}
+	row := tx.QueryRow(ctx, `
+		update usuarios set nome = $2, email = $3, papel = $4
+		where id = $1
+		returning `+colunasUsuario,
+		usuarioID, strings.TrimSpace(a.Nome), strings.TrimSpace(a.Email), a.Papel)
 	u, err := escanearUsuario(row)
 	if err != nil {
 		return nil, err
@@ -396,4 +393,89 @@ func (r *Repo) AtualizarUsuario(ctx context.Context, usuarioID string, a Atualiz
 		return nil, err
 	}
 	return u, nil
+}
+
+// ErrVinculoExternoConflitante: o usuário achado por e-mail já tem um (external_issuer,
+// external_sub) DIFERENTE gravado — recusa o login em vez de rebindar silenciosamente
+// (achado por revisão de segurança, 22/10: sem essa checagem, um token com o e-mail de
+// outra pessoa — mesmo que legitimamente assinado pelo emissor confiado — conseguiria
+// sequestrar a conta local dela trocando o vínculo externo por baixo dos panos).
+var ErrVinculoExternoConflitante = errors.New("usuario ja vinculado a outra identidade externa")
+
+// BuscarUsuarioPorExternalSub resolve pelo `(issuer, sub)` do token do portal — identidade
+// preferida no login via SSO (skill auth-conecta-cidades: "use sub ou preferred_username
+// como identificador", já que `cpf` é opcional e normalmente ausente nos tokens de
+// servidor). ESCOPADO POR EMISSOR (22/10, corrigido por revisão de segurança): `sub` é um ID
+// interno POR MUNICÍPIO na Conecta Cidades — duas prefeituras diferentes podem ter um
+// servidor com o mesmo `sub` cada uma; comparar sem o emissor juntava contas de tenants
+// diferentes.
+func (r *Repo) BuscarUsuarioPorExternalSub(ctx context.Context, issuer, externalSub string) (*domain.Usuario, error) {
+	row := r.Pool.QueryRow(ctx, `select `+colunasUsuario+` from usuarios where external_issuer = $1 and external_sub = $2`, issuer, externalSub)
+	return escanearUsuario(row)
+}
+
+// DadosPortal — o que o token do portal (já verificado) resolve sobre a pessoa, pronto pra
+// gravar/atualizar. SecretariaID/UnidadeID já vêm resolvidos (via mapeamento_externo) pelo
+// controller — este repository não decide isso. EmailVerificado (22/10, revisão de
+// segurança) controla se o fallback de busca por e-mail pode rodar — ver UpsertUsuarioPortal.
+type DadosPortal struct {
+	ExternalIssuer  string
+	ExternalSub     string
+	Nome            string
+	Email           string
+	EmailVerificado bool
+	Papel           domain.Papel
+	SecretariaID    *string
+	UnidadeID       *string
+}
+
+// UpsertUsuarioPortal implementa o passo 6 da skill auth-conecta-cidades (seção 4): busca por
+// `(issuer, external_sub)` primeiro; existe = atualiza nome/papel/vínculo (papel é
+// REAPLICADO a cada entrada — uma promoção/rebaixamento na plataforma vale no próximo
+// acesso, sem esperar nada expirar); não existe = tenta por e-mail (só se `EmailVerificado`
+// — ver aviso abaixo); continua sem achar = cria, sem aprovação prévia, com `senha_hash`
+// nulo (login por SSO não usa senha).
+//
+// Duas travas de segurança no fallback por e-mail (22/10, revisão de segurança):
+//  1. só roda se `d.EmailVerificado` — um e-mail não confirmado pelo próprio emissor não é
+//     base confiável pra herdar o acesso de uma conta local já existente.
+//  2. se o usuário achado por e-mail já tiver um vínculo externo DIFERENTE gravado, a função
+//     recusa (`ErrVinculoExternoConflitante`) em vez de sobrescrever silenciosamente —
+//     nunca "rebinda" uma identidade externa já estabelecida.
+//
+// Usuário desativado não é recriado nem reativado automaticamente aqui — a função só
+// atualiza os dados; quem decide se o acesso é permitido (checando `Ativo`) é o controller,
+// igual já faz pro login por senha.
+func (r *Repo) UpsertUsuarioPortal(ctx context.Context, d DadosPortal) (*domain.Usuario, error) {
+	existente, err := r.BuscarUsuarioPorExternalSub(ctx, d.ExternalIssuer, d.ExternalSub)
+	// Fallback por e-mail só roda com EmailVerificado=true (ver aviso de segurança acima) —
+	// sem isso, `existente` continua nil e `err` continua ErrNaoEncontrado, caindo direto no
+	// INSERT abaixo, exatamente como se o fallback nem existisse.
+	if errors.Is(err, ErrNaoEncontrado) && d.EmailVerificado {
+		existente, err = r.BuscarUsuarioPorEmail(ctx, d.Email)
+		if err == nil && existente.ExternalSub != nil &&
+			(*existente.ExternalSub != d.ExternalSub || existente.ExternalIssuer == nil || *existente.ExternalIssuer != d.ExternalIssuer) {
+			return nil, ErrVinculoExternoConflitante
+		}
+	}
+	if err != nil && !errors.Is(err, ErrNaoEncontrado) {
+		return nil, err
+	}
+
+	if existente != nil {
+		row := r.Pool.QueryRow(ctx, `
+			update usuarios
+			set nome = $2, papel = $3, secretaria_id = $4, unidade_id = $5, external_sub = $6, external_issuer = $7, ultimo_acesso_em = now()
+			where id = $1
+			returning `+colunasUsuario,
+			existente.ID, strings.TrimSpace(d.Nome), d.Papel, d.SecretariaID, d.UnidadeID, d.ExternalSub, d.ExternalIssuer)
+		return escanearUsuario(row)
+	}
+
+	row := r.Pool.QueryRow(ctx, `
+		insert into usuarios (secretaria_id, unidade_id, nome, email, papel, external_sub, external_issuer, ativo, ultimo_acesso_em)
+		values ($1, $2, $3, $4, $5, $6, $7, true, now())
+		returning `+colunasUsuario,
+		d.SecretariaID, d.UnidadeID, strings.TrimSpace(d.Nome), strings.TrimSpace(d.Email), d.Papel, d.ExternalSub, d.ExternalIssuer)
+	return escanearUsuario(row)
 }

@@ -49,7 +49,6 @@ type corpoAtualizacaoUsuario struct {
 	Nome     string   `json:"nome"`
 	Email    string   `json:"email"`
 	Papel    string   `json:"papel"`
-	Senha    string   `json:"senha"`
 	GradeIDs []string `json:"gradeIds"`
 }
 
@@ -83,9 +82,9 @@ func (c *Controllers) usuarioAlvoAcessivel(ctx context.Context, usuarioLogado, a
 }
 
 // PatchUsuario: PATCH /api/v1/usuarios/{usuarioId} — gestor (só dentro da própria
-// secretaria) ou admin (qualquer usuário). Nome/email sempre atualizados; senha só troca se
-// vier preenchida; gradeId realoca o atendente pra outra fila (vazio = sem grade, válido
-// pra gestor/recepcionista).
+// secretaria) ou admin (qualquer usuário). Nome/email/papel sempre atualizados; gradeId
+// realoca o atendente pra outra fila (vazio = sem grade, válido pra gestor/recepcionista).
+// Senha removida (22/10) — login é só via SSO agora, não existe mais senha pra trocar aqui.
 func (c *Controllers) PatchUsuario(w http.ResponseWriter, r *http.Request) {
 	usuarioLogado := auth.UsuarioDoContexto(r.Context())
 	if usuarioLogado.Papel != domain.PapelGestor && usuarioLogado.Papel != domain.PapelAdmin {
@@ -111,7 +110,7 @@ func (c *Controllers) PatchUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 	// Gestor não pode mudar o próprio cargo (pedido explícito do dono do produto) — evita
 	// ele se rebaixar/travar o próprio acesso sem outro gestor por perto pra reverter. Editar
-	// nome/email/senha de si mesmo continua permitido normalmente.
+	// nome/email de si mesmo continua permitido normalmente.
 	if usuarioID == usuarioLogado.ID && usuarioLogado.Papel == domain.PapelGestor && papel != usuarioLogado.Papel {
 		views.ResponderErro(w, http.StatusForbidden, "nao_pode_mudar_proprio_cargo", "voce nao pode mudar o proprio cargo")
 		return
@@ -145,15 +144,6 @@ func (c *Controllers) PatchUsuario(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a := repository.AtualizacaoUsuario{Nome: corpo.Nome, Email: corpo.Email, Papel: papel, GradeIDs: corpo.GradeIDs}
-	if corpo.Senha != "" {
-		hash, err := auth.HashSenha(corpo.Senha)
-		if err != nil {
-			views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
-			return
-		}
-		a.NovaSenhaHash = &hash
-	}
-
 	atualizado, err := c.Repo.AtualizarUsuario(r.Context(), usuarioID, a)
 	if err != nil {
 		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())

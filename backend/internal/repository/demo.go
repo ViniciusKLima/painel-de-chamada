@@ -36,11 +36,36 @@ func telefoneDemo(indice int) string {
 // LimparDadosDemo remove qualquer agendamento gerado anteriormente (protocolo com o prefixo
 // DEMO-) daquela unidade — rodado sempre antes de gerar um lote novo, pra repetir a
 // demonstração não acumular lixo de execuções passadas.
+//
+// Bug real corrigido (20/10): se algum dos agendamentos demo já tiver sido chamado de
+// verdade (testando "Chamar próximo" com dado de demonstração, por exemplo), ele ganha uma
+// linha em `chamadas` — e o DELETE batia em `chamadas_agendamento_id_fkey` (FK sem cascade,
+// de propósito: `chamadas` é log append-only, nunca deve sumir sozinho quando um agendamento
+// REAL é mexido, ver skill modelo-dados). Pra dado de demonstração especificamente isso não
+// se aplica — é tudo sintético e descartável por natureza ("rodar de novo substitui o lote
+// anterior" já era a intenção desde o início) — então aqui, e só aqui, as chamadas desses
+// agendamentos específicos (filtrados pelo prefixo DEMO-) são apagadas junto, numa
+// transação, antes do DELETE dos agendamentos em si.
 func (r *Repo) LimparDadosDemo(ctx context.Context, unidadeID string) error {
-	_, err := r.Pool.Exec(ctx, `
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		delete from chamadas where agendamento_id in (
+			select id from agendamentos where unidade_id = $1 and protocolo like $2
+		)
+	`, unidadeID, PrefixoProtocoloDemo+"%"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		delete from agendamentos where unidade_id = $1 and protocolo like $2
-	`, unidadeID, PrefixoProtocoloDemo+"%")
-	return err
+	`, unidadeID, PrefixoProtocoloDemo+"%"); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // GerarDadosDemo cria um lote de agendamentos sintéticos, mas com mecânica 100% real (fila

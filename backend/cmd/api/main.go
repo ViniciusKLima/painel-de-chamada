@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"painel-chamada-backend/internal/auth"
 	"painel-chamada-backend/internal/controllers"
 	"painel-chamada-backend/internal/painel"
@@ -21,9 +22,22 @@ import (
 func main() {
 	ctx := context.Background()
 
+	// Bug real corrigido (22/10): `.env` nunca foi de fato carregado pelo processo — todo
+	// valor em uso até aqui só "funcionava" porque o default em `envOu` abaixo coincidia com
+	// o do arquivo. Ficou visível ao adicionar CONECTA_INTROSPECT_API_TOKEN, que não tem (e
+	// não deveria ter) um default seguro. `Load()` ignora erro de propósito — em produção
+	// (Render/Docker) as variáveis reais vêm injetadas pelo host, sem arquivo `.env` nenhum,
+	// e isso não deve derrubar o processo.
+	_ = godotenv.Load()
+
 	databaseURL := envOu("DATABASE_URL", "postgres://painel:painel_dev_local@localhost:5433/painel_chamada")
 	sessaoSegredo := []byte(envOu("SESSAO_SEGREDO", "troque-por-um-segredo-local-qualquer-32-chars"))
 	cookieSeguro := envOu("APP_ENV", "development") != "development"
+	// Login integrado via portal (SSO, 22/10) — ver skill auth-conecta-cidades.
+	// CONECTA_INTROSPECT_API_TOKEN vazio desliga o endpoint por completo (PostSessaoPortal
+	// recusa com 503 em vez de aceitar login sem conseguir confirmar o uso único).
+	conectaAudiencia := envOu("CONECTA_AUDIENCIA", "")
+	conectaIntrospectToken := envOu("CONECTA_INTROSPECT_API_TOKEN", "")
 
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
@@ -35,11 +49,14 @@ func main() {
 	gerenciadorPainel := painel.NovoGerenciador()
 
 	c := &controllers.Controllers{
-		Repo:          repo,
-		SessaoSegredo: sessaoSegredo,
-		SessaoDuracao: 8 * time.Hour,
-		CookieSeguro:  cookieSeguro,
-		Painel:        gerenciadorPainel,
+		Repo:                   repo,
+		SessaoSegredo:          sessaoSegredo,
+		SessaoDuracao:          8 * time.Hour,
+		CookieSeguro:           cookieSeguro,
+		Painel:                 gerenciadorPainel,
+		ChavesPublicas:         auth.NovoChavesPublicas(),
+		ConectaAudiencia:       conectaAudiencia,
+		ConectaIntrospectToken: conectaIntrospectToken,
 	}
 
 	iniciarSweeperAusencia(ctx, repo)
@@ -54,7 +71,8 @@ func main() {
 	})
 
 	router.Route("/api/v1", func(api chi.Router) {
-		api.Post("/login", c.PostLogin)
+		// Login por senha REMOVIDO (22/10) — só SSO via portal, ver skill auth-conecta-cidades.
+		api.Post("/sessao/portal", c.PostSessaoPortal)
 		api.Get("/painel/{gradeId}", c.GetPainel)                                      // público, sem sessão — ver skill painel-tv
 		api.Get("/unidades/{unidadeId}/paineis-publico", c.GetPaineisPublicoDaUnidade) // público, kiosk de TV do local (23/09)
 

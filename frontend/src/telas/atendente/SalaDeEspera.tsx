@@ -652,6 +652,7 @@ export default function SalaDeEspera() {
                             <table>
                               <thead>
                                 <tr>
+                                  <th>Horário</th>
                                   <th>Nome</th>
                                   <th>Protocolo</th>
                                   <th>Prioridade</th>
@@ -660,6 +661,9 @@ export default function SalaDeEspera() {
                               <tbody>
                                 {itensGrade.map((a) => (
                                   <tr key={a.id}>
+                                    <td className="celula-horario numerico">
+                                      {a.horarioPrevisto ? new Date(a.horarioPrevisto).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                                    </td>
                                     <td>{a.nomeCidadao}</td>
                                     <td className="numerico">{a.protocolo}</td>
                                     <td>
@@ -671,7 +675,7 @@ export default function SalaDeEspera() {
                                     </td>
                                   </tr>
                                 ))}
-                                {itensGrade.length === 0 && <tr><td colSpan={3}>Fila vazia.</td></tr>}
+                                {itensGrade.length === 0 && <tr><td colSpan={4}>Fila vazia.</td></tr>}
                               </tbody>
                             </table>
                           </div>

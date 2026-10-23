@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"painel-chamada-backend/internal/auth"
@@ -11,41 +10,12 @@ import (
 	"painel-chamada-backend/internal/views"
 )
 
-type corpoLogin struct {
-	Email string `json:"email"`
-	Senha string `json:"senha"`
-}
-
-// PostLogin: POST /api/v1/login — login do MVP (email+senha), ver skill auth-login-mvp.
-// Não detalha se foi o email ou a senha que errou, de propósito.
-func (c *Controllers) PostLogin(w http.ResponseWriter, r *http.Request) {
-	var corpo corpoLogin
-	if err := json.NewDecoder(r.Body).Decode(&corpo); err != nil {
-		views.ResponderErro(w, http.StatusBadRequest, "corpo_invalido", "corpo da requisicao invalido")
-		return
-	}
-
-	usuario, err := c.Repo.BuscarUsuarioPorEmail(r.Context(), corpo.Email)
-	if err != nil || usuario.SenhaHash == nil || !auth.VerificarSenha(*usuario.SenhaHash, corpo.Senha) {
-		views.ResponderErro(w, http.StatusUnauthorized, "identidade_invalida", "email ou senha invalidos")
-		return
-	}
-	if !usuario.Ativo {
-		views.ResponderErro(w, http.StatusForbidden, "usuario_desativado", "acesso revogado")
-		return
-	}
-
-	token, err := auth.CriarSessao(c.SessaoSegredo, usuario.ID, c.SessaoDuracao)
-	if err != nil {
-		views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", "falha ao criar sessao")
-		return
-	}
-	// Best-effort: se falhar, não impede o login — é só o registro de "último acesso" da
-	// tela "Usuários internos" do gestor (22/09), não uma etapa crítica da autenticação.
-	_ = c.Repo.AtualizarUltimoAcesso(r.Context(), usuario.ID)
-	auth.DefinirCookieSessao(w, token, c.SessaoDuracao, c.CookieSeguro || auth.RequisicaoViaHTTPS(r))
-	views.ResponderJSON(w, http.StatusOK, c.usuarioParaJSON(r.Context(), usuario))
-}
+// Login por e-mail+senha REMOVIDO (22/10, pedido direto do dono do produto: "derrube toda
+// aquela autenticação antiga... suba apenas com o método jwt") — a única forma de autenticar
+// agora é o login integrado via portal (SSO real da Conecta Cidades, ver
+// `internal/controllers/sso.go` e skill `auth-conecta-cidades`). `GetSessao`/`DeleteSessao`
+// continuam exatamente como antes — o mecanismo de sessão (cookie HttpOnly) nunca mudou, só
+// deixou de existir uma segunda PORTA de entrada pra ele.
 
 func (c *Controllers) GetSessao(w http.ResponseWriter, r *http.Request) {
 	usuario := auth.UsuarioDoContexto(r.Context())

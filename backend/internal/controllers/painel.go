@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"painel-chamada-backend/internal/repository"
 	"painel-chamada-backend/internal/views"
 )
 
@@ -65,17 +64,6 @@ func (c *Controllers) GetPainel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Modo "aguardando" (23/09, pedido do dono do produto) só entra em jogo quando NÃO há
-	// nenhuma chamada nova ativa em destaque — nunca compete com a exibição normal.
-	var aguardando []repository.AguardandoExibicao
-	if atual == nil {
-		aguardando, err = c.Repo.ListarAguardandoExibicao(r.Context(), gradeID, 4)
-		if err != nil {
-			views.ResponderErro(w, http.StatusInternalServerError, "erro_interno", err.Error())
-			return
-		}
-	}
-
 	// Cores de identidade da prefeitura (22/09, configuráveis pelo admin) — resolvidas via
 	// unidade -> secretaria -> prefeitura, mesma cadeia usada em Controllers.usuarioParaJSON.
 	// O painel é público (sem sessão), então precisa resolver isso aqui, não reaproveita a
@@ -88,5 +76,5 @@ func (c *Controllers) GetPainel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	views.ResponderJSON(w, http.StatusOK, views.PainelResponse(grade, unidade.Nome, atual, expiraEm, duracaoTotal, aguardando, ultimas, corDestaque, corClara))
+	views.ResponderJSON(w, http.StatusOK, views.PainelResponse(grade, unidade.Nome, atual, expiraEm, duracaoTotal, ultimas, corDestaque, corClara))
 }

@@ -79,17 +79,16 @@ func criarFixture(t *testing.T) *fixture {
 		t.Fatalf("grade nova deveria ter nascido com 1 guichê padrão: %v", err)
 	}
 
-	hash := "$2a$10$fakehashsoparatestenaoehusadoparalogin........................"
 	usuarioA, err := r.CriarUsuario(ctx, NovoUsuario{
 		Nome: "TESTE_AUTOMATIZADO_ATENDENTE_A", Email: "teste.auto.a." + sufixo + "@local.dev",
-		SenhaHash: hash, Papel: domain.PapelAtendente, UnidadeID: &unidade.ID, GradeIDs: []string{grade.ID},
+		Papel: domain.PapelAtendente, UnidadeID: &unidade.ID, GradeIDs: []string{grade.ID},
 	})
 	if err != nil {
 		t.Fatalf("CriarUsuario A: %v", err)
 	}
 	usuarioB, err := r.CriarUsuario(ctx, NovoUsuario{
 		Nome: "TESTE_AUTOMATIZADO_ATENDENTE_B", Email: "teste.auto.b." + sufixo + "@local.dev",
-		SenhaHash: hash, Papel: domain.PapelAtendente, UnidadeID: &unidade.ID, GradeIDs: []string{grade.ID},
+		Papel: domain.PapelAtendente, UnidadeID: &unidade.ID, GradeIDs: []string{grade.ID},
 	})
 	if err != nil {
 		t.Fatalf("CriarUsuario B: %v", err)

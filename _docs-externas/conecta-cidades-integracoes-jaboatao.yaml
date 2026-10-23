@@ -1,0 +1,2533 @@
+
+# Spec da documentação PÚBLICA de integrações externas, renderizada pelo
+# Scalar em /docs/integracoes (ApiDocsController#integracoes).
+#
+# Template ERB: o controller injeta `base_url`, `host` e `public_key`
+# (chave pública JWT, já indentada) antes de entregar ao Scalar.
+#
+# A documentação completa da API externa (todos os recursos) vive em
+# config/api_docs/openapi_internal.yml, servida em /admin/api-reference
+# (requer login).
+
+info:
+  title: Conecta Cidades — Integrações Externas
+  description: |
+    Documentação pública para sistemas externos que integram com a plataforma
+    Conecta Cidades. Cobre quatro áreas:
+
+    - **Login Integrado (SSO)** — cidadãos autenticados no portal acessam
+      sistemas externos sem novo login, via token JWT.
+    - **Notificações Push** — envio de notificações push para cidadãos
+      identificados por CPF.
+    - **Webhooks** — eventos que a plataforma envia (demandas, agendamentos,
+      inscrições, formulários, cidadão) para endpoints cadastrados, com
+      assinatura HMAC e novas tentativas.
+    - **Tramitação por Sistemas Externos** — solicitação de tramitação enviada
+      ao sistema externo e endpoint de retorno da decisão.
+
+    > 📚 **Documentação completa da API** (formulários, enquetes, agendamentos,
+    > inscrições, eventos e demais recursos): [/admin/api-reference](/admin/api-reference)
+    > — requer login de usuário administrador.
+
+    ## Autenticação
+
+    Os endpoints da API externa exigem um Bearer token no header `Authorization`:
+
+    ```
+    Authorization: Bearer SEU_TOKEN_AQUI
+    ```
+
+    Tokens são emitidos pelo administrador da plataforma, com permissões
+    granulares por recurso (`introspect_api`, `citizen_notifications_api`,
+    `ai_agents_api`). Para cada aplicativo integrado é fornecido um token
+    específico.
+
+    ## Limites de requisição (rate limiting)
+
+    As chamadas são limitadas **por token**, em duas janelas: por minuto
+    (padrão 300/min) e por dia
+    (padrão 30000/dia), ajustáveis por
+    token. Toda resposta autenticada traz `X-RateLimit-Limit`,
+    `X-RateLimit-Remaining` e `X-RateLimit-Reset` (epoch da janela de minuto);
+    ao exceder, a API responde **429** com corpo `RateLimitError` e header
+    `Retry-After` (segundos). A janela diária é alinhada ao epoch: zera às
+    **00:00 UTC** (21:00 no horário de Brasília), não à meia-noite local.
+
+    ## Formato de erro
+
+    Toda resposta de erro é um objeto JSON com `error`, `message`,
+    `error_code` (código estável) e `request_id` — informe o `request_id` ao
+    reportar problemas. Ver schema `Error`.
+  version: "1.0.0"
+  contact:
+    name: Conecta Cidades
+
+servers:
+  - url: https://jaboataomaisfacil.jaboatao.pe.gov.br
+    description: Domínio do município
+
+tags:
+  - name: Login Integrado (SSO) — Cidadão
+    description: |
+      Integração segura de acesso único (Single Sign-On) entre o portal da
+      prefeitura e sistemas externos.
+
+      ## Objetivo
+
+      Permite que **cidadãos autenticados** no portal da prefeitura acessem
+      **sistemas externos/terceirizados** sem necessidade de novo login.
+
+      ## Como funciona
+
+      1. Cidadão faz login no portal da prefeitura (via gov.br)
+      2. Cidadão clica em um serviço com integração JWT habilitada
+      3. Sistema gera um token JWT com dados do cidadão
+      4. Cidadão é redirecionado para o sistema externo com o token na URL:
+         `https://exemplo.com/servico?token=eyJhbGciOiJSUzI1NiIs...`
+      5. Sistema externo valida o token e autentica o cidadão automaticamente
+
+      Características: tokens com validade de **30 minutos**, controle de uso único, compatível com o
+      padrão Keycloak. A integração é habilitada individualmente por serviço.
+
+      ## Formato do token
+
+      JWT assinado com **RS256**, três partes separadas por ponto
+      (`header.payload.signature`), payload no formato Keycloak:
+
+      ```json
+      {
+        "sub": "ID do cidadão",
+        "iss": "https://jaboataomaisfacil.jaboatao.pe.gov.br",
+        "aud": "hostname-do-servico.com",
+        "iat": "Timestamp de emissão",
+        "exp": "Timestamp de expiração",
+        "jti": "ID único do token",
+        "preferred_username": "CPF do cidadão",
+        "email": "email@exemplo.com",
+        "email_verified": true,
+        "name": "Nome do cidadão",
+        "cpf": "CPF do cidadão"
+      }
+      ```
+
+      | Campo | Descrição | Exemplo |
+      |-------|-----------|---------|
+      | `sub` | ID do cidadão | `123` |
+      | `iss` | Emissor do token | `https://jaboataomaisfacil.jaboatao.pe.gov.br` |
+      | `aud` | Hostname do seu serviço | `seu-servico.com` |
+      | `iat` / `exp` | Timestamps de emissão e expiração | — |
+      | `jti` | ID único do token (controle de uso único) | uuid |
+      | `preferred_username` / `cpf` | CPF do cidadão | `12345678900` |
+      | `email` / `email_verified` | Email validado do cidadão | `joao@exemplo.com` |
+      | `name` | Nome completo | `João Silva Santos` |
+
+      > ⚠️ O campo `aud` contém o hostname específico do seu serviço.
+      > Sempre verifique se corresponde ao seu domínio.
+
+      ## Opções de verificação
+
+      - **Verificação local** — use a chave pública (abaixo) ou o endpoint
+        JWKS para verificar a assinatura localmente.
+      - **Verificação via API** — use o endpoint de introspection para
+        verificação completa e controle de uso único.
+
+      As duas são complementares: valide localmente **e depois** chame a
+      introspection (obrigatória).
+
+      ## Chave pública para verificação local
+
+      ```
+      -----BEGIN PUBLIC KEY-----
+      MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA6Y5WlA1L9Q7T6tXcg0Lw
+      FcqRcBuAM4w0M8OL1HU++yeXNfIqtcx4yq0nJHF2pv+Zlps+XiJHuqWq7nYAEC/D
+      Qc4IPcnJ+AqiWeBGwH7AC+U0rvGnZ+yFP5vIulSg1MzJba/MWyX3/r9kJ0ow2AEt
+      yOzJHBJnvSY7OKeZ4SgEnE6flGaUJ5k8izhCiET5b1DU7BZxyjCjQDddfFyesceK
+      nHqNtAuWSVAuiP//sfo8YjiluQfgx2gGUz2/E3tNpnYNNOnpSIDlaG2/cf8hicmZ
+      j42ZO1bWbWkbXTrw3c5IKDReI24+3A8hZL35eA/+HcyuNEi6Iuz2uC2cKcKDpgDH
+      M1cr/p93Xz01EVBBZ5Fl0JrHFdGGByxqVLjh4TnAhFpEU8WWdpKxrpMlXiDhgmKe
+      xWDyBfkU+BCbIEFnYACQq4B2ybh9jg7fDSFGlwfqyIYRjcB8rR4q4x9dAFTq8Bnt
+      xAeiHxhdtjkrupkBXsZKTpEK2FqNp38BKRosOK8pPyGddMiomG61qdq0AA27AD9k
+      vc/uEULorwKboTh6qRLcJKAN4xr8q8Hr2bt1siOirBoRriYm0th+B08Zr0HF+qBL
+      9qf3MXLZbkrMRveWjz/gXTaFfKx+v84pKV0dz7eMu04hQbu4KalXZAS4IO4erev6
+      t9bZYJQjyuc4oSaD6+iSQ2ECAwEAAQ==
+      -----END PUBLIC KEY-----
+      ```
+
+      **Recomendação:** prefira o endpoint JWKS (`GET /.well-known/jwks.json`)
+      para obter as chaves automaticamente e facilitar rotação futura.
+
+      ## Exemplos de implementação
+
+      **Node.js**
+
+      ```javascript
+      const jwt = require('jsonwebtoken');
+
+      try {
+        const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] });
+        console.log('Token válido:', decoded);
+        console.log('CPF do cidadão:', decoded.cpf);
+      } catch (error) {
+        console.error('Token inválido:', error.message);
+      }
+      ```
+
+      **Python**
+
+      ```python
+      import jwt
+
+      try:
+          decoded = jwt.decode(token, public_key, algorithms=['RS256'])
+          print('Token válido:', decoded)
+          print('CPF do cidadão:', decoded['cpf'])
+      except jwt.InvalidTokenError as e:
+          print('Token inválido:', str(e))
+      ```
+
+      **PHP**
+
+      ```php
+      try {
+          $decoded = JWT::decode($token, $publicKey, array('RS256'));
+          echo 'CPF do cidadão: ' . $decoded->cpf;
+      } catch (Exception $e) {
+          echo 'Token inválido: ' . $e->getMessage();
+      }
+      ```
+
+      ## Requisitos de segurança OBRIGATÓRIOS
+
+      Todos os sistemas integrados **devem** implementar:
+
+      **Verificações criptográficas**
+
+      - Assinatura JWT com RS256
+      - Validação dos timestamps `exp` e `iat`
+
+      **Verificações de origem**
+
+      - `iss` deve ser exatamente `https://jaboataomaisfacil.jaboatao.pe.gov.br`
+      - `aud` deve ser exatamente o seu domínio, sem http/https, páginas ou parâmetros
+      - `jti` usado para controle de uso único
+
+      **Introspection (uso obrigatório)**
+
+      Após as verificações acima, você **deve**:
+
+      1. Chamar a API de introspection (`POST /oauth/introspect`)
+      2. Verificar `active: true` na resposta
+      3. Usar os dados retornados — o token torna-se de uso único
+
+      **Implementação incorreta** (nunca faça): usar dados do token sem
+      verificar assinatura; não validar expiração; não verificar `iss`/`aud`;
+      não usar introspection; aceitar tokens expirados; reutilizar tokens já
+      processados.
+
+      **Outras considerações**: HTTPS obrigatório em todas as comunicações;
+      implemente login manual como fallback; registre logs de auditoria das
+      tentativas de autenticação; defina timeout de sessão adequado.
+  - name: Login Integrado (SSO) — Servidor
+    description: |
+      Integração segura de acesso único (Single Sign-On) entre o painel
+      administrativo da prefeitura e sistemas externos.
+
+      ## Objetivo
+
+      Permite que **servidores municipais autenticados** no painel
+      administrativo acessem **sistemas externos/terceirizados** (BI,
+      intranet, ferramentas de gestão) sem necessidade de novo login.
+
+      ## Como funciona
+
+      1. Servidor faz login no painel administrativo da prefeitura
+      2. Servidor clica em um link customizado com integração JWT habilitada
+         (link do menu lateral, aba com iframe ou dashboard externo)
+      3. Sistema gera um token JWT com dados do servidor no momento do clique
+      4. Servidor é direcionado para o sistema externo com o token na URL:
+         `https://exemplo.com/painel-bi?token=eyJhbGciOiJSUzI1NiIs...`
+      5. Sistema externo valida o token e autentica o servidor automaticamente
+
+      Características: tokens com validade de **30 segundos** (gerados no
+      clique — consuma imediatamente na chegada), controle de uso único,
+      compatível com o padrão Keycloak. A integração é habilitada
+      individualmente por link, na configuração do painel.
+
+      ## Formato do token
+
+      JWT assinado com **RS256**, três partes separadas por ponto
+      (`header.payload.signature`), payload no formato Keycloak:
+
+      ```json
+      {
+        "sub": "ID do servidor",
+        "iss": "https://jaboataomaisfacil.jaboatao.pe.gov.br",
+        "aud": "hostname-do-servico.com",
+        "iat": "Timestamp de emissão",
+        "exp": "Timestamp de expiração",
+        "jti": "ID único do token",
+        "preferred_username": "servidor@prefeitura.gov.br",
+        "email": "servidor@prefeitura.gov.br",
+        "email_verified": false,
+        "name": "Nome do servidor",
+        "roles": ["manager"],
+        "department_ids": [3, 7],
+        "unit_ids": [12],
+        "cpf": "CPF do servidor (OPCIONAL)"
+      }
+      ```
+
+      | Campo | Descrição | Exemplo |
+      |-------|-----------|---------|
+      | `sub` | ID do servidor | `42` |
+      | `iss` | Emissor do token | `https://jaboataomaisfacil.jaboatao.pe.gov.br` |
+      | `aud` | Hostname do seu serviço | `seu-servico.com` |
+      | `iat` / `exp` | Timestamps de emissão e expiração | — |
+      | `jti` | ID único do token (controle de uso único) | uuid |
+      | `preferred_username` / `email` | E-mail do servidor | `servidor@prefeitura.gov.br` |
+      | `email_verified` | E-mail confirmado | `false` |
+      | `name` | Nome completo | `Maria Souza` |
+      | `roles` | Papéis do servidor no painel | `["manager"]` |
+      | `department_ids` | IDs das secretarias vinculadas | `[3, 7]` |
+      | `unit_ids` | IDs das unidades vinculadas | `[12]` |
+      | `cpf` | CPF do servidor — **OPCIONAL** | `12345678900` |
+
+      > ⚠️ O campo `aud` contém o hostname específico do seu serviço.
+      > Sempre verifique se corresponde ao seu domínio.
+
+      > ⚠️ **O claim `cpf` é OPCIONAL e normalmente ausente** — nunca assuma
+      > presença. Use `sub` (ID) ou `preferred_username` (e-mail) como
+      > identificador do servidor.
+
+      ## Opções de verificação
+
+      - **Verificação local** — use a chave pública (abaixo) ou o endpoint
+        JWKS para verificar a assinatura localmente.
+      - **Verificação via API** — use o endpoint de introspection para
+        verificação completa e controle de uso único.
+
+      As duas são complementares: valide localmente **e depois** chame a
+      introspection (obrigatória).
+
+      ## Chave pública para verificação local
+
+      ```
+      -----BEGIN PUBLIC KEY-----
+      MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA6Y5WlA1L9Q7T6tXcg0Lw
+      FcqRcBuAM4w0M8OL1HU++yeXNfIqtcx4yq0nJHF2pv+Zlps+XiJHuqWq7nYAEC/D
+      Qc4IPcnJ+AqiWeBGwH7AC+U0rvGnZ+yFP5vIulSg1MzJba/MWyX3/r9kJ0ow2AEt
+      yOzJHBJnvSY7OKeZ4SgEnE6flGaUJ5k8izhCiET5b1DU7BZxyjCjQDddfFyesceK
+      nHqNtAuWSVAuiP//sfo8YjiluQfgx2gGUz2/E3tNpnYNNOnpSIDlaG2/cf8hicmZ
+      j42ZO1bWbWkbXTrw3c5IKDReI24+3A8hZL35eA/+HcyuNEi6Iuz2uC2cKcKDpgDH
+      M1cr/p93Xz01EVBBZ5Fl0JrHFdGGByxqVLjh4TnAhFpEU8WWdpKxrpMlXiDhgmKe
+      xWDyBfkU+BCbIEFnYACQq4B2ybh9jg7fDSFGlwfqyIYRjcB8rR4q4x9dAFTq8Bnt
+      xAeiHxhdtjkrupkBXsZKTpEK2FqNp38BKRosOK8pPyGddMiomG61qdq0AA27AD9k
+      vc/uEULorwKboTh6qRLcJKAN4xr8q8Hr2bt1siOirBoRriYm0th+B08Zr0HF+qBL
+      9qf3MXLZbkrMRveWjz/gXTaFfKx+v84pKV0dz7eMu04hQbu4KalXZAS4IO4erev6
+      t9bZYJQjyuc4oSaD6+iSQ2ECAwEAAQ==
+      -----END PUBLIC KEY-----
+      ```
+
+      **Recomendação:** prefira o endpoint JWKS (`GET /.well-known/jwks.json`)
+      para obter as chaves automaticamente e facilitar rotação futura.
+
+      ## Exemplos de implementação
+
+      **Node.js**
+
+      ```javascript
+      const jwt = require('jsonwebtoken');
+
+      try {
+        const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] });
+        console.log('Token válido:', decoded);
+        console.log('E-mail do servidor:', decoded.preferred_username);
+        console.log('Papéis:', decoded.roles);
+      } catch (error) {
+        console.error('Token inválido:', error.message);
+      }
+      ```
+
+      **Python**
+
+      ```python
+      import jwt
+
+      try:
+          decoded = jwt.decode(token, public_key, algorithms=['RS256'])
+          print('Token válido:', decoded)
+          print('E-mail do servidor:', decoded['preferred_username'])
+          print('Papéis:', decoded['roles'])
+      except jwt.InvalidTokenError as e:
+          print('Token inválido:', str(e))
+      ```
+
+      **PHP**
+
+      ```php
+      try {
+          $decoded = JWT::decode($token, $publicKey, array('RS256'));
+          echo 'E-mail do servidor: ' . $decoded->preferred_username;
+      } catch (Exception $e) {
+          echo 'Token inválido: ' . $e->getMessage();
+      }
+      ```
+
+      ## Requisitos de segurança OBRIGATÓRIOS
+
+      Todos os sistemas integrados **devem** implementar:
+
+      **Verificações criptográficas**
+
+      - Assinatura JWT com RS256
+      - Validação dos timestamps `exp` e `iat`
+
+      **Verificações de origem**
+
+      - `iss` deve ser exatamente `https://jaboataomaisfacil.jaboatao.pe.gov.br`
+      - `aud` deve ser exatamente o seu domínio, sem http/https, páginas ou parâmetros
+      - `jti` usado para controle de uso único
+
+      **Introspection (uso obrigatório)**
+
+      Após as verificações acima, você **deve**:
+
+      1. Chamar a API de introspection (`POST /oauth/introspect`)
+      2. Verificar `active: true` na resposta
+      3. Usar os dados retornados — o token torna-se de uso único
+
+      **Implementação incorreta** (nunca faça): usar dados do token sem
+      verificar assinatura; não validar expiração; não verificar `iss`/`aud`;
+      não usar introspection; aceitar tokens expirados; reutilizar tokens já
+      processados; assumir presença do claim `cpf`.
+
+      **Outras considerações**: HTTPS obrigatório em todas as comunicações;
+      implemente login manual como fallback; registre logs de auditoria das
+      tentativas de autenticação; defina timeout de sessão adequado.
+  - name: Notificações Push
+    description: |
+      Envio de notificações push para cidadãos específicos, identificados por
+      CPF. Requer token com permissão `citizen_notifications_api`.
+  - name: Webhooks
+    description: |
+      A plataforma envia `POST` JSON assinado para os endpoints cadastrados em
+      Integrações → Webhooks. Qualquer sistema pode assinar os eventos abaixo; os
+      webhooks de tramitação seguem o mesmo guia.
+
+      ## Guia de Webhooks
+
+      ### Quais webhooks existem
+
+      | Webhook | Quando dispara | Onde é configurado | Corpo |
+      |---|---|---|---|
+      | **Eventos de submissão** (BI, planilha) | Submissão criada, mudança de status, arquivamento e desarquivamento | No formulário, pela administração da plataforma | Próprio (`submissionEvent`) |
+      | **Solicitação de tramitação** | Submissão entra num status sob responsabilidade de sistema externo (agente de IA ou responsável externo) | No status do fluxo: pelo gestor (agente de IA) ou pela administração da plataforma (responsável externo) | Próprio (`tramitacaoRequest`) |
+      | **Endpoint genérico** | Os eventos escolhidos no cadastro (lista nesta seção) | Pelo administrador do município, em Integrações → Webhooks | Envelope padrão (abaixo) |
+
+      Os webhooks que já existiam (eventos de submissão, solicitação de
+      tramitação e WhatsApp Flow) **mantêm o corpo que você já recebe**; só
+      ganharam os cabeçalhos `X-Webhook-*`.
+
+      ### Cabeçalhos
+
+      Todo webhook é um `POST` com `Content-Type: application/json` e
+      `Accept: application/json`, mais:
+
+      | Header | Valor |
+      |---|---|
+      | `X-Webhook-Id` | UUID do evento. É o mesmo em todas as tentativas e nos reenvios manuais: **deduplique por ele** |
+      | `X-Webhook-Event` | Tipo do evento (ex.: `submission.status_changed`) |
+      | `X-Webhook-Timestamp` | Unix epoch, em segundos, do instante **desta tentativa** |
+      | `X-Webhook-Signature` | `v1=<hex>`: HMAC-SHA256, em hexadecimal, do texto `"<X-Webhook-Timestamp>.<corpo bruto>"` com o segredo do endpoint. Durante a rotação de segredo vêm duas assinaturas separadas por vírgula (`v1=<hex>,v1=<hex>`): aceite a requisição se **qualquer uma** conferir |
+      | `User-Agent` | `ConectaCidades-Webhooks/1.0` nos endpoints genéricos; os webhooks que já existiam mantêm o `User-Agent` que você já recebia |
+
+      ### Verificação da assinatura
+
+      Calcule o HMAC sobre o **corpo bruto, exatamente como recebido** (antes de
+      qualquer parse de JSON), compare em tempo constante com cada assinatura do
+      header e recuse timestamp a mais de 5 minutos do seu relógio (proteção
+      contra replay). A assinatura é opcional: quem não a valida continua
+      recebendo normalmente.
+
+      ```ruby
+      ts = request.headers["X-Webhook-Timestamp"]
+      expected = "v1=" + OpenSSL::HMAC.hexdigest("SHA256", secret, "#{ts}.#{request.raw_post}")
+      fresh = (Time.now.to_i - ts.to_i).abs <= 300
+      ok = fresh && request.headers["X-Webhook-Signature"].to_s.split(",").any? do |sig|
+        ActiveSupport::SecurityUtils.secure_compare(sig, expected)
+      end
+      ```
+      ```js
+      const ts = req.get("X-Webhook-Timestamp");
+      const expected = Buffer.from("v1=" + crypto.createHmac("sha256", secret).update(`${ts}.${rawBody}`).digest("hex"));
+      const fresh = Math.abs(Date.now() / 1000 - Number(ts)) <= 300;
+      const ok = fresh && (req.get("X-Webhook-Signature") || "").split(",").some((sig) => {
+        const candidate = Buffer.from(sig);
+        return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+      });
+      ```
+      ```python
+      ts = request.headers["X-Webhook-Timestamp"]
+      expected = "v1=" + hmac.new(secret.encode(), f"{ts}.".encode() + raw_body, hashlib.sha256).hexdigest()
+      fresh = abs(time.time() - int(ts)) <= 300
+      ok = fresh and any(hmac.compare_digest(sig, expected)
+                         for sig in request.headers.get("X-Webhook-Signature", "").split(","))
+      ```
+
+      ### Corpo dos endpoints genéricos
+
+      Envelope `{ id, event, occurred_at, tenant, api_version, data }` (schema
+      `WebhookEnvelope`): `id` é o mesmo valor de `X-Webhook-Id`, `occurred_at`
+      é o instante do fato (não da tentativa) e `data` varia por evento (nesta
+      seção). Ignore campos e eventos que você não conhece: novos campos
+      e novos eventos podem surgir a qualquer momento, nunca removidos ou
+      renomeados.
+
+      ### Entrega e novas tentativas
+
+      - Responda `2xx` rápido e processe de forma assíncrona. Qualquer `2xx`
+        encerra a entrega.
+      - Geram nova tentativa: resposta `5xx`, `408` ou `429`, timeout (10 s nos
+        endpoints genéricos, 30 s nos webhooks que já existiam), erro de rede
+        ou TLS e falha de DNS do seu domínio no momento do envio. Se a resposta
+        trouxer `Retry-After` em segundos maior que o próximo intervalo, ele é
+        respeitado (até 24 h).
+      - Agenda: imediata, +1 min, +5 min, +30 min, +2 h, +6 h, +12 h, +24 h e
+        +24 h, num total de **9 tentativas em cerca de 2 dias e 21 horas**.
+      - **Não** geram nova tentativa: demais respostas `4xx` e redirecionamentos
+        (`3xx`, que não são seguidos). Endereço que passe a apontar para rede
+        interna, ou que não use `https`, também não é chamado, e cada recusa
+        conta para a suspensão.
+      - A mesma entrega pode chegar **mais de uma vez** (por exemplo, se a
+        plataforma cair entre o envio e o registro da sua resposta): descarte a
+        repetida pelo `X-Webhook-Id`.
+      - Na solicitação de tramitação, as tentativas restantes são canceladas se
+        a submissão sair do status (ou for arquivada) antes de a entrega dar
+        certo.
+      - Após **20 tentativas falhas seguidas** o endpoint é suspenso: os eventos
+        seguintes não são enviados (ficam disponíveis para reenvio depois de
+        reativar o endpoint) e o administrador do município é avisado. Ele reativa o endpoint na tela,
+        ou com um ping respondido com `2xx`.
+      - Não há garantia de ordem entre eventos: use `occurred_at` para ordenar.
+
+      ### Segredo
+
+      Gerado no cadastro do endpoint e exibido uma única vez ao administrador do
+      município. Para os webhooks que já existiam, peça a ele que gere um
+      segredo (rotação) na tela do endpoint. Ao rotacionar, o segredo anterior
+      continua assinando em paralelo por 24 horas.
+
+      ### Ping e reenvio manual
+
+      - **Ping:** o administrador pode enviar o evento `ping` para validar o
+        endpoint. Ele sempre usa o envelope padrão com `data: {}` (inclusive
+        nos webhooks que já existiam), é uma tentativa única e não conta para a
+        suspensão.
+      - **Reenvio:** o administrador pode reenviar uma entrega por até 90 dias.
+        O reenvio repete o mesmo `X-Webhook-Id`. No envelope padrão, o corpo é o
+        mesmo nos primeiros 30 dias; depois disso o conteúdo é remontado com o
+        estado atual do registro e vem sinalizado com `redelivered: true`. Nos
+        webhooks que já existiam (BI, WhatsApp Flow, agente de IA e responsável
+        externo), cada tentativa e cada reenvio remontam o corpo com o estado
+        atual do registro.
+
+  - name: Tramitação por Sistemas Externos
+    description: |
+      Permite que um sistema externo participe da tramitação de submissões de
+      formulário: a plataforma **envia webhooks** e o sistema externo **devolve a
+      decisão** pelo endpoint de retorno.
+
+      O guia completo de assinatura, cabeçalhos e novas tentativas está na seção
+      **Webhooks**; o essencial para a tramitação:
+
+      - Cada webhook traz `X-Webhook-Id` e `X-Webhook-Signature`: valide a
+        assinatura e deduplique pelo `X-Webhook-Id`.
+      - Respostas `5xx`, `408`, `429`, timeout, erro de rede e falha de DNS geram
+        nova tentativa (até 9, em cerca de 2 dias e 21 horas); as tentativas
+        restantes são canceladas se a demanda sair do status.
+      - A `callback_url` recebida já traz o `status_id`; retorno de um status que
+        a demanda já deixou recebe `409` com `error_code: stale_callback`.
+
+      ## Retorno INBOUND — sistema externo → Conecta
+
+      Ao receber a **solicitação de tramitação**, o sistema externo processa a
+      submissão e chama a `callback_url` recebida, devolvendo o novo status. O
+      endpoint de retorno depende do tipo de responsável da etapa:
+
+      | Etapa sob responsabilidade de | Endpoint de retorno | Campo do corpo |
+      |-------------------------------|---------------------|----------------|
+      | Agente de IA | `POST /api/ext/v1/ai_agents/receive_response` | `ai_response` |
+      | **Responsável externo** (sistema de terceiro) | `POST /api/ext/v1/external_responsibles/receive_response` | `external_response` |
+
+      Use sempre a `callback_url` recebida: ela já aponta para o endpoint certo e
+      traz `submission_id` e `status_id`. Se a demanda já tiver saído desse
+      status quando o retorno chegar (reentrega atrasada, retorno duplicado), a
+      resposta é `409` com `error_code: stale_callback` e nada é alterado: trate
+      como "já processado". Requer token com permissão `ai_agents_api`.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token de API emitido pelo administrador da plataforma
+
+  responses:
+    RateLimited:
+      description: |
+        Limite de requisições excedido (RI-006) — janela de minuto ou diária
+        do token, ou teto por IP sem token válido. Aguarde o intervalo do
+        Retry-After antes de repetir.
+      headers:
+        Retry-After:
+          description: Segundos até a janela reabrir
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: Limite da janela de minuto (não muda de significado no 429)
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Restante na janela de minuto
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch (segundos) em que a janela de minuto reabre
+          schema:
+            type: integer
+        X-RateLimit-Limit-Day:
+          description: |
+            Limite da janela diária. Ausente quando o bloqueio veio da janela de
+            minuto (a diária não chega a ser avaliada) ou do teto por IP.
+          schema:
+            type: integer
+        X-RateLimit-Remaining-Day:
+          description: Restante na janela diária
+          schema:
+            type: integer
+        X-RateLimit-Reset-Day:
+          description: Epoch (segundos) em que a janela diária reabre (00:00 UTC)
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitError"
+
+  # Cabeçalhos dos webhooks que a plataforma ENVIA (seção `webhooks:`).
+  # Mesmo texto em openapi_integracoes.yml.erb e openapi_internal.yml.
+  parameters:
+    WebhookIdHeader:
+      name: X-Webhook-Id
+      in: header
+      required: true
+      description: UUID do evento, igual em todas as tentativas e reenvios. Use para deduplicar.
+      schema:
+        type: string
+        format: uuid
+        example: "9b2d9c1e-4f7a-4c1e-9a55-3c2b1d0e8f71"
+    WebhookEventHeader:
+      name: X-Webhook-Event
+      in: header
+      required: true
+      description: Tipo do evento.
+      schema:
+        type: string
+        example: submission.status_changed
+    WebhookTimestampHeader:
+      name: X-Webhook-Timestamp
+      in: header
+      required: true
+      description: Unix epoch, em segundos, do instante desta tentativa. Recuse valores a mais de 5 minutos do seu relógio.
+      schema:
+        type: string
+        example: "1760450722"
+    WebhookSignatureHeader:
+      name: X-Webhook-Signature
+      in: header
+      required: true
+      description: |
+        `v1=<hex>`: HMAC-SHA256 do texto `"<X-Webhook-Timestamp>.<corpo bruto>"`
+        com o segredo do endpoint. Durante a rotação de segredo traz duas
+        assinaturas separadas por vírgula; aceite se qualquer uma conferir.
+        Exemplos de verificação no Guia de Webhooks da
+        [documentação pública de integrações](/docs/integracoes).
+      schema:
+        type: string
+        example: "v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        error_code:
+          type: string
+          description: |
+            Código estável em snake_case para tratamento automático
+            (ex.: "unauthorized", "not_found", "unprocessable_entity").
+        request_id:
+          type: string
+          description: |
+            Identificador único da requisição (igual ao header X-Request-Id).
+            Informe-o ao reportar um erro ao suporte.
+      example:
+        error: "Unauthorized"
+        message: "Token inválido ou revogado"
+        error_code: "unauthorized"
+        request_id: "3f2a1c9e-8b1d-4e5f-9a2b-7c6d5e4f3a2b"
+
+    RateLimitError:
+      type: object
+      description: |
+        Resposta 429 quando o token excede o limite de chamadas — por minuto
+        (burst) ou por dia (volume). Os limites padrão são
+        300/min e
+        30000/dia, ajustáveis por
+        token. Toda resposta autenticada traz os cabeçalhos X-RateLimit-Limit,
+        X-RateLimit-Remaining e X-RateLimit-Reset (epoch) da janela de minuto,
+        e os equivalentes com sufixo -Day da janela diária; o 429 acrescenta
+        Retry-After (segundos).
+      properties:
+        error:
+          type: string
+        error_code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        retry_after:
+          type: integer
+          description: Segundos até a janela reabrir (igual ao header Retry-After)
+        limit_window:
+          type: string
+          enum: [minute, day, ip]
+          description: |
+            Qual teto estourou: `minute` e `day` são os limites do token;
+            `ip` é o teto aplicado a requisição sem token válido.
+      example:
+        error: "rate_limited"
+        error_code: "rate_limited"
+        message: "Limite de requisições excedido. Tente novamente em 42 segundos."
+        request_id: "3f2a1c9e-8b1d-4e5f-9a2b-7c6d5e4f3a2b"
+        retry_after: 42
+        limit_window: "minute"
+
+    WebhookAttachment:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: "comprovante.pdf"
+        content_type:
+          type: string
+          example: "application/pdf"
+        file_size:
+          type: integer
+          description: Tamanho em bytes
+          example: 204800
+        url:
+          type: string
+          description: URL pública para download do arquivo
+        attachment_id:
+          type: integer
+
+    SubmissionPayload:
+      type: object
+      description: |
+        Bloco `submission` presente em todos os webhooks de tramitação.
+        Estrutura **append-only**: campos nunca são removidos ou renomeados;
+        novos campos podem ser adicionados a qualquer momento.
+      properties:
+        id:
+          type: integer
+          example: 12345
+        protocol:
+          type: string
+          description: Protocolo exibido ao cidadão
+          example: "2026-000123"
+        form_name:
+          type: string
+          example: "Solicitação de poda"
+        form_id:
+          type: integer
+          example: 42
+        status:
+          type: object
+          description: Status atual da submissão
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+              example: "Em análise"
+            is_terminal:
+              type: boolean
+            responsible_type:
+              type: string
+              description: Tipo de responsável pelo status atual (`User`, `Citizen`, `AIAgent` ou `ExternalResponsible`)
+              example: "AIAgent"
+        archived_at:
+          type: [string, "null"]
+          format: date-time
+          description: Data de arquivamento (ISO 8601) ou null
+        form_data:
+          type: array
+          description: |
+            Respostas do formulário. Campos de arquivo/imagem trazem
+            `attachments` no lugar de `value`.
+          items:
+            type: object
+            properties:
+              field_id:
+                type: integer
+              field_name:
+                type: string
+                example: "endereco"
+              field_type:
+                type: string
+                example: "text"
+              value:
+                type: [string, "null"]
+              attachments:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookAttachment'
+        status_history:
+          type: array
+          items:
+            type: object
+            properties:
+              status_name:
+                type: string
+              changed_at:
+                type: string
+                format: date-time
+              changed_by:
+                type: string
+                description: Nome do responsável pela mudança, ou "Sistema"
+              comment:
+                type: [string, "null"]
+              internal_comment:
+                type: [string, "null"]
+              attachments:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookAttachment'
+        created_at:
+          type: string
+          format: date-time
+        citizen_data:
+          type: object
+          description: |
+            Dados do cidadão. `name` e `cpf` sempre presentes (submissão
+            identificada); contato, endereço e dados de deficiência aparecem
+            conforme as opções de compartilhamento habilitadas no formulário.
+          properties:
+            name:
+              type: string
+            cpf:
+              type: string
+            email:
+              type: string
+            phone:
+              type: string
+            address:
+              type: string
+            zip_code:
+              type: string
+            number:
+              type: string
+            complement:
+              type: string
+            neighborhood:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            disability_type:
+              type: string
+
+    # Payloads dos webhooks que a plataforma ENVIA (seção `webhooks:`).
+    # Mesmo texto em openapi_integracoes.yml.erb e openapi_internal.yml.
+    WebhookEnvelope:
+      type: object
+      description: |
+        Corpo dos webhooks enviados a endpoints genéricos. Estrutura
+        **append-only**: campos e eventos novos podem surgir; nada é removido
+        ou renomeado.
+      required: [id, event, occurred_at, tenant, api_version, data]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Mesmo valor de `X-Webhook-Id`. Igual em todas as tentativas e reenvios.
+        event:
+          type: string
+          example: submission.status_changed
+        occurred_at:
+          type: string
+          format: date-time
+          description: Instante do fato que gerou o evento (não da tentativa).
+          example: "2026-10-14T13:05:22.123456-03:00"
+        tenant:
+          type: string
+          description: Identificador do município (tenant).
+          example: prefeitura_exemplo
+        api_version:
+          type: string
+          description: Versão do envelope.
+          example: "2026-10"
+        redelivered:
+          type: boolean
+          description: |
+            Presente (`true`) só em reenvio manual de evento com mais de 30 dias,
+            cujo conteúdo foi remontado com o estado atual do registro. O `id` é
+            o mesmo da entrega original.
+        data:
+          type: object
+          description: Conteúdo do evento; ver cada entrada da seção Webhooks.
+
+    WebhookReview:
+      type: object
+      description: Avaliação do atendimento feita pelo cidadão.
+      properties:
+        id:
+          type: integer
+        rating:
+          type: integer
+          description: Nota dada pelo cidadão.
+        comment:
+          type: [string, "null"]
+          description: Comentário da avaliação; `null` enquanto não estiver liberado pela moderação.
+        anonymous:
+          type: [boolean, "null"]
+
+    FormPayload:
+      type: object
+      description: |
+        Formulário com os campos ativos. Em `form.removed` vem só
+        `{ id, whatsapp_flow_id }`.
+      required: [id]
+      properties:
+        id:
+          type: integer
+          example: 42
+        whatsapp_flow_id:
+          type: [string, "null"]
+          description: Id do flow no parceiro WhatsApp Flow, quando houver.
+        name:
+          type: string
+          example: Solicitação de poda
+        description:
+          type: string
+          description: Descrição em HTML; pode vir vazia.
+        is_active:
+          type: boolean
+        allow_anonymous_submissions:
+          type: boolean
+        services:
+          type: array
+          description: Serviços que usam o formulário.
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+        items:
+          type: array
+          description: Campos ativos, na ordem de preenchimento.
+          items:
+            $ref: '#/components/schemas/WhatsappFlowItem'
+        statuses:
+          type: array
+          description: |
+            Status (etapas) do formulário, na ordem do fluxo, inclusive os
+            inativos. Só no formato `standard`.
+          items:
+            $ref: '#/components/schemas/FormStatusPayload'
+
+    FormStatusPayload:
+      type: object
+      description: |
+        Etapa do fluxo de um formulário. `next_status_ids` são as etapas para
+        as quais esta pode avançar. A configuração do agente de IA e do
+        responsável externo não sai no payload.
+      properties:
+        id: { type: integer, example: 3 }
+        name: { type: string, example: Em análise }
+        order:
+          type: [number, "null"]
+          description: Posição no fluxo (número, pode ter casa decimal).
+        color: { type: [string, "null"], example: "#FFA500" }
+        is_terminal:
+          type: boolean
+          description: Encerra a demanda.
+        is_active: { type: boolean }
+        responsible_type:
+          type: string
+          enum: [User, Citizen, AIAgent, ExternalResponsible]
+          description: Quem age nesta etapa (servidor, cidadão, agente de IA ou responsável externo).
+        notify_citizen: { type: boolean }
+        accepts_attachments: { type: boolean }
+        required_attachments:
+          type: integer
+          description: Quantidade mínima de anexos ao entrar na etapa.
+        citizen_comment_requirement:
+          type: string
+          enum: [none, optional, required]
+        requires_scheduling: { type: boolean }
+        auto_transition_after_scheduling: { type: boolean }
+        send_evaluation_push: { type: boolean }
+        sla_duration:
+          type: [integer, "null"]
+          description: Prazo da etapa, em `sla_unit_kind`.
+        sla_unit_kind:
+          type: [string, "null"]
+          enum: [calendar_days, business_days, null]
+        unit:
+          type: [object, "null"]
+          description: Unidade responsável pela etapa, quando houver.
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        next_status_ids:
+          type: array
+          items: { type: integer }
+
+    WebhookAppointee:
+      type: [object, "null"]
+      description: Para quem é o agendamento ou a inscrição (o próprio cidadão ou um dependente).
+      properties:
+        type:
+          type: string
+          enum: [Citizen, Dependent]
+        id:
+          type: integer
+        name:
+          type: string
+        cpf:
+          type: [string, "null"]
+          description: Presente quando `type` é `Dependent`, e na inscrição também para `Citizen`.
+        relationship:
+          type: [string, "null"]
+          description: Só em `Dependent`.
+        birth_date:
+          type: [string, "null"]
+          format: date
+          description: Só em `Dependent`.
+
+    AppointmentPayload:
+      type: object
+      description: |
+        Agendamento. Contém dado pessoal (nome e contato do cidadão): trate
+        conforme a LGPD e apague ao receber `citizen.anonymized`.
+      properties:
+        id: { type: integer, example: 812 }
+        protocol:
+          type: string
+          description: Protocolo formatado, como exibido ao cidadão.
+        raw_protocol:
+          type: string
+        scheduled_at:
+          type: string
+          format: date-time
+        scheduled_date:
+          type: string
+          format: date
+        duration_minutes:
+          type: integer
+        slot:
+          type: integer
+        status:
+          type: string
+          enum: [scheduled, attended, cancelled_by_citizen, cancelled_by_user, no_show]
+        citizen_id:
+          type: integer
+        service_id:
+          type: integer
+        scheduling_location_id:
+          type: integer
+        appointee_type:
+          type: string
+          enum: [Citizen, Dependent]
+        appointee_id:
+          type: integer
+        service:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        scheduling_location:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            address: { type: [string, "null"] }
+            description: { type: [string, "null"] }
+            pre_scheduling_text_body: { type: [string, "null"] }
+            post_scheduling_text_body: { type: [string, "null"] }
+            post_attendance_text_body: { type: [string, "null"] }
+        citizen:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            phone: { type: [string, "null"] }
+            email: { type: [string, "null"] }
+        appointee:
+          $ref: '#/components/schemas/WebhookAppointee'
+        cancellation_reason:
+          type: [string, "null"]
+        cancelled_at:
+          type: [string, "null"]
+          format: date-time
+        attended_at:
+          type: [string, "null"]
+          format: date-time
+        confirmed_at:
+          type: [string, "null"]
+          format: date-time
+        form_submission_id:
+          type: [integer, "null"]
+        form_submission_protocol:
+          type: [string, "null"]
+
+    RegistrationEntryPayload:
+      type: object
+      description: |
+        Inscrição de um participante. As respostas de arquivo vêm sem URL de
+        download (`file_urls` não é enviado no webhook). Contém dado pessoal:
+        trate conforme a LGPD e apague ao receber `citizen.anonymized`.
+      properties:
+        id: { type: integer }
+        registration_id: { type: integer }
+        status:
+          type: string
+          enum: [confirmed, attended, cancelled]
+        appointee:
+          $ref: '#/components/schemas/WebhookAppointee'
+        form_submission_id:
+          type: [integer, "null"]
+        attended_at:
+          type: [string, "null"]
+          format: date-time
+        cancelled_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        registration:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            start_date: { type: [string, "null"] }
+            end_date: { type: [string, "null"] }
+        event:
+          type: [object, "null"]
+          description: Evento ao qual a inscrição pertence, quando houver.
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            start_date: { type: [string, "null"] }
+        citizen:
+          type: object
+          properties:
+            name: { type: string }
+            cpf: { type: [string, "null"] }
+            email: { type: [string, "null"] }
+        form_answers:
+          type: [array, "null"]
+          description: Respostas do formulário da inscrição; `null` quando a inscrição não tem formulário.
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              value: {}
+              field_type: { type: string, description: Tipo base do campo (campos inteligentes chegam no tipo base). }
+              smart_field_type: { type: string, description: Tipo real do campo; presente apenas em campo inteligente. }
+
+    CitizenAnonymizedPayload:
+      type: object
+      description: |
+        O cidadão teve os dados pessoais apagados da plataforma (LGPD). Apague
+        também, no seu sistema, os dados pessoais dele recebidos por webhook.
+      required: [citizen_id, anonymized_at]
+      properties:
+        citizen_id:
+          type: integer
+          description: Mesmo valor de `citizen_id` no payload de agendamento.
+        anonymized_at:
+          type: string
+          format: date-time
+
+    VacancyPayload:
+      type: object
+      description: |
+        Vaga de emprego, na visão da empresa anunciante (a mesma do painel de
+        gestão): inclui contato, bloco de moderação e desfecho do encerramento.
+        `status` chega cru (`expired` não é traduzido para `closed`, como na
+        vitrine pública). Não traz URL de logo, os aliases `cbo_family_*` da
+        API do app nem os campos que dependem do cidadão logado (`for_me`,
+        `is_member`, `applied`, `my_candidacy`).
+      properties:
+        id: { type: integer, example: 57 }
+        short_description: { type: string, description: Título da vaga. }
+        description: { type: [string, "null"] }
+        requirements: { type: [string, "null"] }
+        benefits: { type: [string, "null"] }
+        request_referral: { type: [boolean, "null"], description: Empresa pede carta de indicação. }
+        drivers_license: { type: [boolean, "null"], description: Exige CNH. }
+        drivers_license_types:
+          type: [array, "null"]
+          items: { type: string }
+          description: Categorias de CNH exigidas.
+        drivers_license_type:
+          type: [string, "null"]
+          description: Coluna legada (uma categoria); prefira `drivers_license_types`.
+        disponibility_travel: { type: [boolean, "null"], description: Disponibilidade para viajar. }
+        disponibility_travel_long_period: { type: [boolean, "null"], description: Disponibilidade para viagens longas. }
+        disponibility_sleep_work: { type: [boolean, "null"], description: Disponibilidade para dormir no trabalho. }
+        disponibility_work_vehicle: { type: [boolean, "null"], description: Disponibilidade para trabalhar com veículo próprio. }
+        status:
+          type: string
+          enum: [draft, open, closed, canceled, expired]
+        application_state:
+          type: string
+          enum: [draft, open, closed, canceled, expired, full, moderated]
+          description: Estado efetivo para exibição (lotada e denunciada não têm status próprio).
+        open_for_applications: { type: boolean }
+        occupation_codes:
+          type: array
+          items: { type: string }
+        occupation_names:
+          type: array
+          items: { type: string }
+        salary: { type: [string, "null"] }
+        contract_type: { type: [string, "null"] }
+        work_schedule: { type: [string, "null"], description: Turnos em CSV. }
+        schooling: { type: [string, "null"] }
+        minimum_experience: { type: [string, "null"] }
+        minimum_experience_label: { type: [string, "null"] }
+        accepts_no_experience: { type: [boolean, "null"] }
+        opportunities_available: { type: [integer, "null"] }
+        limit_date: { type: [string, "null"], format: date }
+        limit_applications: { type: [integer, "null"] }
+        candidacies_count: { type: integer, description: Candidaturas ativas. }
+        confidentiality: { type: boolean }
+        pcd_exclusive: { type: boolean }
+        women_exclusive: { type: boolean }
+        workplace: { type: [string, "null"] }
+        state: { type: [string, "null"] }
+        city: { type: [string, "null"] }
+        neighborhood: { type: [string, "null"] }
+        company_name: { type: [string, "null"] }
+        contact_name: { type: [string, "null"] }
+        contact_phone: { type: [string, "null"] }
+        cnpj: { type: [string, "null"] }
+        moderation_status:
+          type: string
+          enum: [active, rejected, approved]
+        rejection_reason: { type: [string, "null"], description: Motivo da moderação, em `vacancy.rejected`. }
+        report_cleared_at: { type: [string, "null"], format: date-time }
+        moderated_at: { type: [string, "null"], format: date-time }
+        closing_reason:
+          type: [string, "null"]
+          enum: [hired, hired_externally, other, admin_unpublished, null]
+        closing_note: { type: [string, "null"] }
+        outcome_recorded_at: { type: [string, "null"], format: date-time }
+        published_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CandidacyPayload:
+      type: object
+      description: |
+        Candidatura a uma vaga. Traz a triagem interna da empresa e a
+        identificação e contato do candidato, **sem currículo nem dado de
+        deficiência** (busque pela API se precisar). Contém dado pessoal: trate
+        conforme a LGPD e apague ao receber `citizen.anonymized`.
+      properties:
+        id: { type: integer }
+        vacancy_id: { type: integer }
+        citizen_id: { type: integer }
+        data_sharing_consent_at: { type: [string, "null"], format: date-time }
+        canceled_at:
+          type: [string, "null"]
+          format: date-time
+          description: Preenchido quando o cidadão desistiu.
+        created_at: { type: string, format: date-time }
+        active: { type: boolean }
+        consent_active: { type: boolean }
+        internal_status:
+          type: string
+          enum: [pending, rejected_internal]
+          description: Triagem interna da empresa; o candidato nunca a vê.
+        hire_status:
+          type: string
+          enum: [not_hired, hired, hired_externally]
+          description: Desfecho registrado pela empresa ao encerrar a vaga.
+        citizen:
+          type: object
+          properties:
+            id: { type: integer }
+            name: { type: string, description: Nome social quando houver. }
+            email: { type: [string, "null"] }
+            phone: { type: [string, "null"] }
+
+    PingPayload:
+      type: object
+      description: Corpo vazio do evento `ping`.
+      additionalProperties: false
+
+    WhatsappFlowItem:
+      type: object
+      description: Item (campo) do formulário, conforme enviado no webhook outbound.
+      properties:
+        id: { type: integer }
+        name:
+          type: string
+          description: Identificador técnico (snake_case) do campo.
+        label:
+          type: string
+          description: Texto visível ao usuário.
+        hint:
+          type: [string, "null"]
+        placeholder:
+          type: [string, "null"]
+        item_type:
+          type: string
+          enum: [small_text, text, boolean, integer, decimal, money, date, datetime, image, file, map_item, radio, select, checkbox, location, email, phone, cpf, cnpj]
+          description: |
+            Tipo do campo. Incompatíveis com WhatsApp Flow: `image`, `file`,
+            `map_item`, `location`. Parceiro responde `status="incompatible"`
+            no callback caso o form use algum.
+
+            Campos inteligentes (pré-preenchidos com dados do cadastro do
+            cidadão) chegam aqui **sempre no tipo base** — nunca com o nome
+            interno do tipo inteligente. O tipo real vem em `smart_field_type`.
+            Trate o campo pelo `item_type`: o formato do valor é o do tipo base.
+        smart_field_type:
+          type: string
+          enum: [name, social_name, birthdate, smart_cpf, smart_email, smart_phone, address, residence_document, disability_document]
+          description: |
+            Presente **apenas** em campos inteligentes; ausente nos demais.
+            Informativo: indica de qual dado do cadastro o campo foi derivado.
+            Ignorar este campo é seguro — o `item_type` já traz o tipo base
+            correspondente (`smart_cpf` → `cpf`, `address` → `location`,
+            `residence_document`/`disability_document` → `file`, `birthdate` →
+            `date`, `name`/`social_name` → `small_text`).
+        required:
+          type: boolean
+        order:
+          type: number
+          format: float
+        list_options:
+          type: array
+          items: { type: string }
+          description: Opções pra radio/select/checkbox. Vazio para outros tipos.
+        max_answers:
+          type: integer
+          description: Pra select/checkbox.
+        min_answers:
+          type: integer
+        max_files:
+          type: integer
+          description: Pra file/image (1 a 5).
+        min_length:
+          type: [integer, "null"]
+          description: >-
+            Mínimo de caracteres da resposta (espaços nas pontas não contam), para
+            `small_text`/`text` e os inteligentes `name`/`social_name`. `null` = sem
+            mínimo. Resposta menor é recusada pelo backend.
+        depends_on_item_id:
+          type: [integer, "null"]
+          description: ID do item-pai, quando este campo é condicional.
+        condition_type:
+          type: [string, "null"]
+          enum: [any_answer, specific_value, value_in_list, null]
+        condition_operator:
+          type: [string, "null"]
+          enum: [equals, not_equals, contains, greater_than, less_than, null]
+        condition_values:
+          type: [array, "null"]
+          items: { type: string }
+
+webhooks:
+  submissionEvent:
+    post:
+      tags: [Webhooks]
+      summary: "Webhook: eventos de submissão"
+      description: |
+        Enviado para a URL de webhook configurada no formulário sempre que uma
+        submissão é criada, muda de status ou é arquivada/desarquivada.
+
+        **Headers enviados:**
+
+        ```
+        Content-Type: application/json
+        Accept: application/json
+        User-Agent: ConectaCidades-FormWebhook/1.0
+        X-Webhook-Id: <UUID do evento>
+        X-Webhook-Event: submission.status_changed
+        X-Webhook-Timestamp: <Unix epoch, segundos>
+        X-Webhook-Signature: v1=<hex>
+        ```
+
+        O corpo é o mesmo de sempre. Assinatura HMAC (opcional para quem
+        recebe), novas tentativas (até 9, em cerca de 2 dias e 21 horas) e
+        deduplicação por `X-Webhook-Id`: ver o Guia de Webhooks na tag
+        **Webhooks**.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, tenant, submission]
+              properties:
+                event:
+                  type: string
+                  enum:
+                    - submission.created
+                    - submission.status_changed
+                    - submission.archived
+                    - submission.unarchived
+                  description: |
+                    `submission.created` — primeira entrada da submissão;
+                    `submission.status_changed` — mudança de status;
+                    `submission.archived` / `submission.unarchived` —
+                    arquivamento (soft delete) e reversão.
+                tenant:
+                  type: string
+                  description: Identificador do município (tenant)
+                  example: "prefeitura_exemplo"
+                submission:
+                  $ref: '#/components/schemas/SubmissionPayload'
+      responses:
+        '200':
+          description: Recebido com sucesso (qualquer 2xx evita retry)
+
+  tramitacaoRequest:
+    post:
+      tags: [Webhooks, Tramitação por Sistemas Externos]
+      summary: "Webhook: solicitação de tramitação"
+      description: |
+        Enviado quando uma submissão entra em um status cuja responsabilidade
+        é de um sistema externo (agente de IA ou responsável externo). O
+        sistema recebe o conteúdo completo da submissão, as transições
+        possíveis e a URL de retorno pronta.
+
+        Após processar (de forma assíncrona), o sistema externo deve chamar a
+        `callback_url` recebida — `POST /api/ext/v1/ai_agents/receive_response`
+        para o agente de IA, ou
+        `POST /api/ext/v1/external_responsibles/receive_response` para o
+        responsável externo — devolvendo a decisão de novo status para
+        continuar a tramitação.
+
+        **Headers enviados:**
+
+        ```
+        Content-Type: application/json
+        Accept: application/json
+        User-Agent: ConectaCidades-ExternalResponsible/1.0   (só responsável externo)
+        X-Webhook-Id: <UUID do evento>
+        X-Webhook-Event: submission.ai_agent_requested | submission.external_responsible_requested
+        X-Webhook-Timestamp: <Unix epoch, segundos>
+        X-Webhook-Signature: v1=<hex>
+        ```
+
+        Enviado 15 segundos depois da mudança de status. Se o seu sistema
+        responder erro ou não responder, a solicitação é reenviada (até 9
+        tentativas, em cerca de 2 dias e 21 horas) com o mesmo `X-Webhook-Id`;
+        as tentativas restantes são canceladas se a demanda sair do status ou
+        for arquivada. Retorno atrasado recebe `409 stale_callback`. Detalhes no
+        Guia de Webhooks.
+
+        O endereço completo configurado na etapa só é exibido à administração
+        da plataforma.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission, possible_transitions, callback_url]
+              properties:
+                submission:
+                  $ref: '#/components/schemas/SubmissionPayload'
+                agent_prompt:
+                  type: [string, "null"]
+                  description: Instruções configuradas no status. Enviado somente quando o responsável é um agente de IA
+                possible_transitions:
+                  type: array
+                  description: Status para os quais a submissão pode transicionar
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 3
+                      name:
+                        type: string
+                        example: "Aprovado"
+                      responsible_type:
+                        type: string
+                        example: "User"
+                callback_url:
+                  type: string
+                  description: URL completa (com `submission_id` e `status_id`) para devolver a decisão; aponta para o endpoint do tipo de responsável da etapa (agente de IA ou responsável externo)
+                  example: "https://jaboataomaisfacil.jaboatao.pe.gov.br/api/ext/v1/ai_agents/receive_response?submission_id=12345&status_id=7"
+      responses:
+        '200':
+          description: Recebido com sucesso — decisão será devolvida depois via callback_url
+
+  # Eventos dos endpoints genéricos (envelope padrão). Mesmo texto em
+  # openapi_integracoes.yml.erb e openapi_internal.yml; um evento novo entra
+  # nos dois.
+  standardSubmission:
+    post:
+      tags: [Webhooks]
+      summary: "Demandas"
+      description: |
+        Envelope padrão com `data.submission`.
+
+        | Evento | Quando |
+        |---|---|
+        | `submission.created` | Submissão registrada (primeiro status) |
+        | `submission.status_changed` | Mudança de status |
+        | `submission.archived` / `submission.unarchived` | Arquivamento e desarquivamento |
+
+        Submissão filha de agrupamento não gera estes eventos: o pai representa
+        a demanda. Cabeçalhos, assinatura e novas tentativas: ver o Guia de
+        Webhooks.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [submission.created, submission.status_changed, submission.archived, submission.unarchived]
+                    data:
+                      type: object
+                      required: [submission]
+                      properties:
+                        submission:
+                          $ref: '#/components/schemas/SubmissionPayload'
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardSubmissionEvaluated:
+    post:
+      tags: [Webhooks]
+      summary: "Demandas: avaliação do cidadão"
+      description: |
+        O cidadão avaliou o atendimento da submissão. Envelope padrão com
+        `data.submission` e `data.review`. O comentário da avaliação só vem
+        depois de liberado pela moderação.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [submission.evaluated]
+                    data:
+                      type: object
+                      required: [submission, review]
+                      properties:
+                        submission:
+                          $ref: '#/components/schemas/SubmissionPayload'
+                        review:
+                          $ref: '#/components/schemas/WebhookReview'
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardForm:
+    post:
+      tags: [Webhooks]
+      summary: "Formulários"
+      description: |
+        Mudança em qualquer formulário do município (modelos do catálogo não
+        disparam): criação, alteração do próprio formulário, dos seus campos ou
+        dos seus status. Independe da integração com WhatsApp Flow.
+        `form.created` sai na hora da criação e pode vir ainda sem campos; a
+        criação também agenda um `form.updated`. Alterações em sequência num
+        mesmo formulário (inclusive as que seguem a criação) viram um único
+        `form.updated`, enviado 60 segundos depois da última.
+
+        Formulário criado a partir de um modelo do catálogo ou copiado de outro
+        formulário não envia `form.created`: o primeiro evento dele é o
+        `form.updated` da primeira edição.
+
+        | Evento | Quando | `data.form` |
+        |---|---|---|
+        | `form.created` | Formulário criado (imediato; pode vir sem campos) | Completo |
+        | `form.updated` | Alteração no formulário, nos campos, nos status ou nas transições entre status (agregada, 60 s após a última) | Completo |
+        | `form.removed` | Formulário apagado; se publicado no WhatsApp Flow, também quando é retirado dele ou fica sem campos | Só `{ id, whatsapp_flow_id }` |
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [form.created, form.updated, form.removed]
+                    data:
+                      type: object
+                      required: [form]
+                      properties:
+                        form:
+                          $ref: '#/components/schemas/FormPayload'
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardAppointment:
+    post:
+      tags: [Webhooks]
+      summary: "Agendamentos"
+      description: |
+        Envelope padrão com `data.appointment`.
+
+        | Evento | Quando |
+        |---|---|
+        | `appointment.created` | Agendamento criado |
+        | `appointment.rescheduled` | Agendamento novo criado por reagendamento; traz `data.previous_appointment_id` |
+        | `appointment.canceled` | Cancelado pelo cidadão ou pela equipe (inclusive o agendamento antigo de um reagendamento) |
+        | `appointment.attended` | Comparecimento registrado |
+        | `appointment.no_show` | Falta registrada |
+
+        Um reagendamento gera dois eventos: `appointment.canceled` do
+        agendamento antigo e `appointment.rescheduled` do novo.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [appointment.created, appointment.rescheduled, appointment.canceled, appointment.attended, appointment.no_show]
+                    data:
+                      type: object
+                      required: [appointment]
+                      properties:
+                        appointment:
+                          $ref: '#/components/schemas/AppointmentPayload'
+                        previous_appointment_id:
+                          type: integer
+                          description: Só em `appointment.rescheduled`; id do agendamento substituído.
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardRegistrationEntry:
+    post:
+      tags: [Webhooks]
+      summary: "Inscrições"
+      description: |
+        Envelope padrão com `data.registration_entry`.
+
+        | Evento | Quando |
+        |---|---|
+        | `registration_entry.confirmed` | Inscrição confirmada |
+        | `registration_entry.attended` | Presença registrada |
+        | `registration_entry.canceled` | Inscrição cancelada |
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [registration_entry.confirmed, registration_entry.attended, registration_entry.canceled]
+                    data:
+                      type: object
+                      required: [registration_entry]
+                      properties:
+                        registration_entry:
+                          $ref: '#/components/schemas/RegistrationEntryPayload'
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardCitizenAnonymized:
+    post:
+      tags: [Webhooks]
+      summary: "Cidadão anonimizado (LGPD)"
+      description: |
+        O cidadão teve os dados pessoais apagados da plataforma (LGPD). O corpo
+        traz só identificadores: apague no seu sistema os dados pessoais desse
+        cidadão recebidos por webhook.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [citizen.anonymized]
+                    data:
+                      $ref: '#/components/schemas/CitizenAnonymizedPayload'
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardVacancy:
+    post:
+      tags: [Webhooks]
+      summary: "Vagas de emprego"
+      description: |
+        Envelope padrão com `data.vacancy` (módulo de Empregos).
+
+        | Evento | Quando |
+        |---|---|
+        | `vacancy.opened` | Empresa publicou a vaga (rascunho → aberta) |
+        | `vacancy.closed` | Empresa encerrou a vaga; `closing_reason`/`closing_note` no payload. Vaga vencida que recebe o desfecho também gera este evento |
+        | `vacancy.canceled` | Administração despublicou a vaga ou descadastrou a empresa |
+        | `vacancy.expired` | Prazo (`limit_date`) venceu sem desfecho registrado |
+        | `vacancy.reported` | Cidadão denunciou a vaga; traz `data.report_id`. A primeira denúncia tira a vaga do ar (`moderation_status: rejected`) |
+        | `vacancy.approved` | Moderação liberou a vaga denunciada (volta ao ar, imune) |
+        | `vacancy.rejected` | Moderação manteve a vaga fora do ar ou a tirou do ar; `rejection_reason` no payload |
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [vacancy.opened, vacancy.closed, vacancy.canceled, vacancy.expired, vacancy.reported, vacancy.approved, vacancy.rejected]
+                    data:
+                      type: object
+                      required: [vacancy]
+                      properties:
+                        vacancy:
+                          $ref: '#/components/schemas/VacancyPayload'
+                        report_id:
+                          type: integer
+                          description: Só em `vacancy.reported`; id da denúncia.
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  standardCandidacy:
+    post:
+      tags: [Webhooks]
+      summary: "Candidaturas"
+      description: |
+        Envelope padrão com `data.candidacy` (módulo de Empregos).
+
+        | Evento | Quando |
+        |---|---|
+        | `candidacy.created` | Cidadão se candidatou; `data.reactivated: true` quando ele havia desistido e voltou |
+        | `candidacy.withdrawn` | Candidatura retirada: pelo cidadão (`data.reason: citizen`) ou automaticamente ao virar membro da empresa dona da vaga (`company_member`) |
+        | `candidacy.internal_status_changed` | Empresa mudou a triagem interna (`internal_status`), individual ou em lote |
+        | `candidacy.outcome_recorded` | Empresa registrou o desfecho (`hire_status`) ao encerrar a vaga |
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [candidacy.created, candidacy.withdrawn, candidacy.internal_status_changed, candidacy.outcome_recorded]
+                    data:
+                      type: object
+                      required: [candidacy]
+                      properties:
+                        candidacy:
+                          $ref: '#/components/schemas/CandidacyPayload'
+                        reactivated:
+                          type: boolean
+                          description: Só em `candidacy.created`; `true` quando é a volta de uma candidatura desistida.
+                        reason:
+                          type: string
+                          enum: [citizen, company_member]
+                          description: |
+                            Só em `candidacy.withdrawn`: `citizen` quando o próprio candidato
+                            desistiu; `company_member` quando a candidatura foi cancelada
+                            automaticamente porque ele virou membro da empresa dona da vaga.
+      responses:
+        '200':
+          description: Recebido. Qualquer `2xx` encerra a entrega.
+
+  ping:
+    post:
+      tags: [Webhooks]
+      summary: "Teste do endpoint: ping"
+      description: |
+        Enviado quando o administrador do município clica em "Enviar ping" na
+        tela do endpoint. Sempre no envelope padrão, com `data: {}`, mesmo nos
+        webhooks que já existiam (que no resto recebem o corpo próprio):
+        ignore com `2xx` eventos que o seu receptor não conhece. Tentativa
+        única, sem nova tentativa em caso de falha.
+      parameters:
+        - $ref: '#/components/parameters/WebhookIdHeader'
+        - $ref: '#/components/parameters/WebhookEventHeader'
+        - $ref: '#/components/parameters/WebhookTimestampHeader'
+        - $ref: '#/components/parameters/WebhookSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/WebhookEnvelope'
+                - type: object
+                  properties:
+                    event:
+                      type: string
+                      enum: [ping]
+                    data:
+                      $ref: '#/components/schemas/PingPayload'
+      responses:
+        '200':
+          description: Endpoint respondeu. O administrador vê o status HTTP e o tempo de resposta.
+
+paths:
+  /oauth/introspect:
+    post:
+      tags: ["Login Integrado (SSO) — Cidadão", "Login Integrado (SSO) — Servidor"]
+      summary: Introspection de token JWT (uso obrigatório)
+      description: |
+        Valida um token JWT recebido via SSO e o **invalida para usos
+        futuros** (uso único). Todos os sistemas integrados **devem** chamar
+        este endpoint após as verificações locais.
+
+        **Por que é obrigatório:**
+
+        - **Uso único** — o token torna-se inválido após a verificação; uma
+          segunda chamada com o mesmo token retorna `active: false`
+        - **Validação em tempo real** — confirma se o token ainda está ativo
+        - **Auditoria** — registra o acesso para controle de segurança
+        - **Revogação** — permite invalidar tokens comprometidos
+
+        Requer token de API com permissão `introspect_api`, específico do
+        município.
+      operationId: introspectToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: O JWT recebido no parâmetro `token` da URL
+            example:
+              token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        '200':
+          description: Resultado da introspection (token ativo ou não)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  jti:
+                    type: string
+                  aud:
+                    type: string
+                  exp:
+                    type: integer
+                  iat:
+                    type: integer
+                  payload:
+                    type: object
+                    properties:
+                      sub:
+                        type: string
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      cpf:
+                        type: string
+              examples:
+                TokenAtivo:
+                  summary: Token válido (primeira verificação)
+                  value:
+                    active: true
+                    jti: "unique-jwt-id"
+                    aud: "seu-hostname.com"
+                    exp: 1640995200
+                    iat: 1640991600
+                    payload:
+                      sub: "123"
+                      name: "João Silva"
+                      email: "joao@exemplo.com"
+                      cpf: "12345678900"
+                TokenInativo:
+                  summary: Token expirado, inválido ou já utilizado
+                  value:
+                    active: false
+        '400':
+          description: Parâmetro `token` ausente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Token parameter is required"
+        '401':
+          description: Token de API inválido ou sem permissão `introspect_api`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /.well-known/jwks.json:
+    get:
+      tags: ["Login Integrado (SSO) — Cidadão", "Login Integrado (SSO) — Servidor"]
+      summary: Descoberta automática de chaves (JWKS)
+      description: |
+        Retorna as chaves públicas no formato JSON Web Key Set (JWKS),
+        permitindo que sua aplicação obtenha automaticamente as chaves
+        necessárias para verificação local da assinatura — e acompanhe
+        rotações de chave sem mudança de código.
+      operationId: getJwks
+      responses:
+        '200':
+          description: Conjunto de chaves públicas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kty:
+                          type: string
+                          example: "RSA"
+                        use:
+                          type: string
+                          example: "sig"
+                        alg:
+                          type: string
+                          example: "RS256"
+                        kid:
+                          type: string
+                          example: "abc12345"
+                        n:
+                          type: string
+                          description: Módulo (base64url)
+                        e:
+                          type: string
+                          description: Expoente (base64url)
+
+  /.well-known/openid-configuration:
+    get:
+      tags: ["Login Integrado (SSO) — Cidadão", "Login Integrado (SSO) — Servidor"]
+      summary: Metadados OpenID (discovery)
+      description: |
+        Documento de descoberta no padrão OpenID Connect, com as URLs dos
+        endpoints de integração (JWKS, introspection) e algoritmos suportados.
+      operationId: getOpenidConfiguration
+      responses:
+        '200':
+          description: Metadados de configuração
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/ext/v1/citizen_notifications:
+    post:
+      tags: [Notificações Push]
+      summary: Enviar notificação para cidadão
+      description: |
+        Envia uma notificação push para um cidadão específico, identificado
+        pelo CPF.
+
+        O sistema determina automaticamente o tipo da notificação:
+        - **Tipo "object"**: quando apenas `subject_type` + `subject_id` são fornecidos
+        - **Tipo "link"**: quando `link_url` também é fornecido
+
+        ### Tipos de objeto suportados (`subject_type`)
+
+        `Service`, `Event`, `MapItem`, `MapItemCategory`, `Citizen`,
+        `FormSubmission`, `FormStatusChange`, `Dependent`
+
+        ### Ação direcionada (`action_type`)
+
+        Por padrão, ao tocar na notificação o aplicativo navega para o
+        **detalhe** do objeto vinculado (ou para o `link_url`). O campo
+        opcional `action_type` existe para os casos em que o destino correto
+        não é o detalhe, e sim uma **ação** sobre o objeto — o app abre
+        diretamente a tela/modal da ação, sem passos intermediários.
+
+        Valor aceito:
+
+        - `evaluate` — abre diretamente o modal de **avaliação do serviço**
+          vinculado. Uso típico: sistema externo de tramitação finaliza um
+          protocolo (`FormSubmission`) e envia a notificação convidando o
+          cidadão a avaliar o atendimento. Exige `subject_type` + `subject_id`
+          (o objeto a ser avaliado); sem eles a requisição retorna 422.
+
+        Valores fora da lista retornam 422 (os demais `action_type` do sistema
+        pertencem a fluxos internos, não acionáveis por integração). A lista é
+        append-only: novos valores podem ser adicionados no futuro sem quebrar
+        integrações existentes.
+
+        ### Validações
+
+        - CPF válido segundo o algoritmo oficial brasileiro
+        - Cidadão deve existir, estar ativo e pertencer ao contrato
+        - `subject_type` e `subject_id` andam juntos (um exige o outro)
+        - `link_url`, se fornecido, deve usar protocolo http ou https
+        - `action_type`, se fornecido, deve estar na lista de valores aceitos;
+          `evaluate` exige `subject_type` + `subject_id`
+
+        A URL também aceita a variação com contrato explícito:
+        `POST /api/ext/v1/{contract_id}/citizen_notifications`. Sem
+        `contract_id`, usa o primeiro contrato ativo do host.
+      operationId: createCitizenNotification
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [citizen_notification]
+              properties:
+                citizen_notification:
+                  type: object
+                  required: [cpf, title, body]
+                  properties:
+                    cpf:
+                      type: string
+                      description: CPF do cidadão destinatário (com ou sem formatação)
+                      example: "12345678901"
+                    title:
+                      type: string
+                      description: Título da notificação
+                      example: "Atualização no seu protocolo"
+                    body:
+                      type: string
+                      description: Corpo da notificação
+                      example: "Sua solicitação foi aprovada."
+                    subject_type:
+                      type: [string, "null"]
+                      description: Tipo do objeto relacionado (obrigatório se subject_id for fornecido)
+                      example: "FormSubmission"
+                    subject_id:
+                      type: [integer, "null"]
+                      description: ID do objeto relacionado (obrigatório se subject_type for fornecido)
+                      example: 12345
+                    link_url:
+                      type: [string, "null"]
+                      description: URL para redirecionamento (http ou https)
+                      example: "https://seu-dominio.com/mensagens/123"
+                    action_type:
+                      type: [string, "null"]
+                      enum: [evaluate, null]
+                      description: >-
+                        Ação que o aplicativo abre diretamente ao tocar na
+                        notificação, em vez do detalhe do objeto.
+                        `evaluate` abre o modal de avaliação do serviço
+                        vinculado e exige subject_type + subject_id.
+                        Ver seção "Ação direcionada (action_type)".
+                      example: "evaluate"
+            examples:
+              NotificacaoComObjeto:
+                summary: Notificação vinculada a uma submissão
+                value:
+                  citizen_notification:
+                    cpf: "12345678901"
+                    title: "Seu protocolo foi atualizado"
+                    body: "Sua solicitação de poda de árvore foi aprovada."
+                    subject_type: "FormSubmission"
+                    subject_id: 12345
+              NotificacaoComLink:
+                summary: Notificação com link externo
+                value:
+                  citizen_notification:
+                    cpf: "12345678901"
+                    title: "Nova mensagem importante"
+                    body: "Clique para acessar informações importantes."
+                    subject_type: "Service"
+                    subject_id: 4
+                    link_url: "https://seu-dominio.com/mensagens/123"
+              NotificacaoAvaliacao:
+                summary: Notificação que abre direto a avaliação do serviço
+                value:
+                  citizen_notification:
+                    cpf: "12345678901"
+                    title: "Avalie o atendimento"
+                    body: "Sua solicitação foi concluída. Conte como foi o atendimento."
+                    subject_type: "FormSubmission"
+                    subject_id: 12345
+                    action_type: "evaluate"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        '201':
+          description: Notificação criada e enviada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  title:
+                    type: string
+                  body:
+                    type: string
+                  link_url:
+                    type: [string, "null"]
+                  read_at:
+                    type: [string, "null"]
+                  created_at:
+                    type: string
+                    format: date-time
+                  subject_data:
+                    type: [object, "null"]
+                    properties:
+                      type:
+                        type: string
+                        enum: [object, link, action]
+                      object_id:
+                        type: integer
+                      object_type:
+                        type: string
+                      name:
+                        type: string
+                      link_url:
+                        type: [string, "null"]
+                      action_type:
+                        type: [string, "null"]
+                        enum: [evaluate, null]
+                        description: >-
+                          Presente quando a notificação foi criada com
+                          action_type. Quando presente, o link_url de
+                          subject_data tem precedência sobre object_id —
+                          ele aponta para a tela da ação, não para o
+                          detalhe do objeto.
+        '401':
+          description: Token inválido ou sem permissão `citizen_notifications_api`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Cidadão não encontrado ou inativo no contrato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: CPF inválido ou parâmetros obrigatórios ausentes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ext/v1/ai_agents/receive_response:
+    post:
+      tags: [Tramitação por Sistemas Externos]
+      summary: Devolver decisão de tramitação
+      description: |
+        Endpoint de retorno chamado pelo sistema externo após processar uma
+        submissão de formulário (recebida pelo webhook de solicitação de
+        tramitação). A URL completa, já com `submission_id`, vem pronta no
+        campo `callback_url` do webhook.
+
+        O sistema devolve uma decisão de novo status com comentário opcional.
+        O retorno só é aceito enquanto o status atual da submissão estiver sob
+        responsabilidade do sistema externo — ou seja, quando é literalmente a
+        vez dele agir.
+
+        ### Fluxo típico
+
+        1. Cidadão envia submissão → status muda para um de responsabilidade
+           de sistema externo
+        2. Plataforma envia o webhook de solicitação de tramitação
+        3. Sistema externo processa e chama este endpoint com a decisão
+        4. Plataforma transiciona o status e registra a mudança
+
+        ### Campos de `ai_response`
+
+        | Campo | Obrigatório | Descrição |
+        |-------|-------------|-----------|
+        | `new_status_id` | sim | ID do próximo status no fluxo do formulário |
+        | `comment` | não | Comentário público visível ao cidadão |
+        | `internal_comment` | não | Comentário interno (não visível ao cidadão) |
+        | `confidence_score` | não | Score de confiança da decisão (0.0 a 1.0) — apenas informativo |
+        | `attachments` | não | Arquivos anexados à mudança de status |
+      operationId: externalTramitacaoResponse
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: |
+            Id do status em que a demanda estava quando a solicitação foi enviada
+            (já vem no `callback_url`). Se informado e a demanda já tiver saído
+            desse status, a resposta é `409 stale_callback` e nada é alterado.
+            Omitido: comportamento anterior.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission_id, ai_response]
+              properties:
+                submission_id:
+                  type: integer
+                  description: ID da FormSubmission sendo processada
+                  example: 12345
+                ai_response:
+                  type: object
+                  required: [new_status_id]
+                  properties:
+                    new_status_id:
+                      type: integer
+                      description: ID do próximo FormStatus no fluxo do formulário
+                      example: 3
+                    comment:
+                      type: [string, "null"]
+                      description: Comentário público visível ao cidadão
+                      example: "Sua solicitação foi analisada e aprovada."
+                    internal_comment:
+                      type: [string, "null"]
+                      description: Comentário interno (não visível ao cidadão)
+                      example: "Aprovado automaticamente com confiança 0.95"
+                    confidence_score:
+                      type: [number, "null"]
+                      format: float
+                      minimum: 0
+                      maximum: 1
+                      description: Score de confiança da decisão (apenas informativo)
+                      example: 0.95
+            examples:
+              Aprovacao:
+                summary: Sistema externo aprova a submissão
+                value:
+                  submission_id: 12345
+                  ai_response:
+                    new_status_id: 3
+                    comment: "Sua solicitação foi analisada e aprovada automaticamente."
+                    internal_comment: "Aprovado com confiança 0.95"
+                    confidence_score: 0.95
+              Rejeicao:
+                summary: Sistema externo encaminha para revisão humana
+                value:
+                  submission_id: 12345
+                  ai_response:
+                    new_status_id: 5
+                    comment: "Sua solicitação necessita de análise adicional."
+                    internal_comment: "Confiança baixa (0.42) — encaminhado para revisor humano."
+                    confidence_score: 0.42
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        '200':
+          description: Decisão processada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Resposta do agente IA processada com sucesso"
+                  status_change_id:
+                    type: integer
+                    example: 789
+                  new_status:
+                    type: string
+                    example: "Aprovado"
+        '401':
+          description: Token inválido ou sem permissão `ai_agents_api`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Status atual da submissão não está sob responsabilidade de sistema externo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: FormSubmission ou status de destino não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Callback obsoleto — a demanda já saiu do status informado em `status_id`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, example: Conflict }
+                  message: { type: string }
+                  error_code: { type: string, enum: [stale_callback] }
+                  current_status_id: { type: integer }
+        '422':
+          description: "Dados inválidos, transição de status não permitida ou `status_id` malformado (`error_code: invalid_status_id`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ext/v1/external_responsibles/receive_response:
+    post:
+      tags: [Tramitação por Sistemas Externos]
+      summary: Devolver o andamento (responsável externo)
+      description: |
+        Endpoint de retorno do **responsável externo**: sistema de terceiro
+        (ex: sistema de chamados de uma concessionária) que recebe a demanda
+        quando ela chega a uma etapa configurada para ele. A URL completa, já
+        com `submission_id`, vem pronta no campo `callback_url` do webhook de
+        solicitação de tramitação.
+
+        O retorno só é aceito enquanto o status atual da submissão estiver sob
+        responsabilidade de um responsável externo. Se a demanda já foi movida
+        (por um retorno anterior ou pela equipe da prefeitura), a resposta é
+        `403` com `error_code: status_not_external_responsible`.
+
+        ### Fluxo típico
+
+        1. A demanda chega a uma etapa de responsável externo
+        2. Plataforma envia o webhook de solicitação de tramitação ao endereço
+           configurado na etapa
+        3. O sistema atende e chama este endpoint com o novo status
+        4. Plataforma move a demanda e registra a mudança como automática
+
+        ### Campos de `external_response`
+
+        | Campo | Obrigatório | Descrição |
+        |-------|-------------|-----------|
+        | `new_status_id` | sim | ID do próximo status; deve estar em `possible_transitions` |
+        | `comment` | não | Comentário público, visível ao cidadão (e usado na notificação) |
+        | `internal_comment` | não | Comentário interno, só a equipe vê. Use para o número do chamado, se ele não deve aparecer ao cidadão |
+        | `attachments` | não | Arquivos (exige `multipart/form-data`), sujeitos às regras de anexo da etapa |
+      operationId: externalResponsibleResponse
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: |
+            Id do status em que a demanda estava quando a solicitação foi enviada
+            (já vem no `callback_url`). Se informado e a demanda já tiver saído
+            desse status, a resposta é `409 stale_callback` e nada é alterado.
+            Omitido: comportamento anterior.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission_id, external_response]
+              properties:
+                submission_id:
+                  type: integer
+                  description: ID da FormSubmission (já vem na `callback_url`)
+                  example: 12345
+                external_response:
+                  type: object
+                  required: [new_status_id]
+                  properties:
+                    new_status_id:
+                      type: integer
+                      description: ID do próximo FormStatus, entre os de `possible_transitions`
+                      example: 32
+                    comment:
+                      type: [string, "null"]
+                      description: Comentário público visível ao cidadão
+                      example: "Sua solicitação foi encaminhada para a equipe técnica."
+                    internal_comment:
+                      type: [string, "null"]
+                      description: Comentário interno (não visível ao cidadão)
+                      example: "Chamado #4521 aberto na concessionária"
+            examples:
+              Atendida:
+                summary: Sistema externo abre o chamado e devolve a demanda
+                value:
+                  submission_id: 12345
+                  external_response:
+                    new_status_id: 32
+                    comment: "Sua solicitação foi encaminhada para a equipe técnica."
+                    internal_comment: "Chamado #4521 aberto na concessionária"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        '200':
+          description: Retorno processado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Retorno do responsável externo processado com sucesso"
+                  status_change_id:
+                    type: integer
+                    example: 789
+                  new_status:
+                    type: string
+                    example: "Em atendimento"
+        '400':
+          description: "`external_response` ou `new_status_id` ausente (`error_code: parameter_missing`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido ou sem permissão `ai_agents_api`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: "Status atual da submissão não está sob responsabilidade de um responsável externo (`error_code: status_not_external_responsible`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: "FormSubmission não encontrada, ou status de destino que não pertence ao formulário (`error_code: target_status_not_found`)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Callback obsoleto — a demanda já saiu do status informado em `status_id`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string, example: Conflict }
+                  message: { type: string }
+                  error_code: { type: string, enum: [stale_callback] }
+                  current_status_id: { type: integer }
+        '422':
+          description: "`status_id` malformado (`error_code: invalid_status_id`), transição não configurada (`error_code: invalid_transition`) ou dados inválidos (`error_code: validation_failed`, com `errors` por campo)"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+

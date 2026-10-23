@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Settings, Tv, Users } from "lucide-react";
 import { api, type Prefeitura } from "../../../api";
 
 export type ContextoPrefeitura = { prefeitura: Prefeitura };
@@ -15,6 +15,13 @@ function abaClasse({ isActive }: { isActive: boolean }) {
 // e "Usuários internos" eram itens GLOBAIS da sidebar do admin, misturando dados de todas as
 // prefeituras numa lista só — agora cada prefeitura tem a sua própria central, sem misturar
 // com as outras (dado real também escopado no backend, não só filtrado aqui).
+//
+// Reorganizado 20/10 (pedido direto: "organize melhor o nav do admin e o gestor... deixe em
+// português também"): a aba "Settings" era o único texto em inglês sobrando no nav inteiro
+// do admin/gestor — virou "Configurações" (rota também: `/settings` → `/configuracoes`,
+// arquivo/componente `PrefeituraSettings` → `PrefeituraConfiguracoes`). As 4 abas ganharam
+// ícone + texto, mesmo padrão já usado na sidebar do gestor (`GestorLayout.tsx`), em vez de
+// texto solto — fica visualmente consistente entre as duas áreas administrativas do sistema.
 export default function PrefeituraLayout() {
   const { prefeituraId } = useParams<{ prefeituraId: string }>();
   const navigate = useNavigate();
@@ -35,10 +42,10 @@ export default function PrefeituraLayout() {
       <h1>{prefeitura.nome}</h1>
 
       <div className="abas">
-        <NavLink to="dashboard" className={abaClasse}>Dashboard</NavLink>
-        <NavLink to="usuarios" className={abaClasse}>Usuários</NavLink>
-        <NavLink to="settings" className={abaClasse}>Settings</NavLink>
-        <NavLink to="paineis" className={abaClasse}>Painéis</NavLink>
+        <NavLink to="dashboard" className={abaClasse}><LayoutDashboard size={16} /> Dashboard</NavLink>
+        <NavLink to="usuarios" className={abaClasse}><Users size={16} /> Usuários</NavLink>
+        <NavLink to="configuracoes" className={abaClasse}><Settings size={16} /> Configurações</NavLink>
+        <NavLink to="paineis" className={abaClasse}><Tv size={16} /> Painéis</NavLink>
       </div>
 
       <Outlet context={{ prefeitura } satisfies ContextoPrefeitura} />

@@ -20,12 +20,11 @@ function ModalEdicaoUsuario({
   usuario: UsuarioAdmin;
   grades: Grade[];
   onFechar: () => void;
-  onSalvar: (dados: { nome: string; email: string; papel: string; senha?: string; gradeIds: string[] }) => Promise<void>;
+  onSalvar: (dados: { nome: string; email: string; papel: string; gradeIds: string[] }) => Promise<void>;
 }) {
   const [nome, setNome] = useState(usuario.nome);
   const [email, setEmail] = useState(usuario.email);
   const [papel, setPapel] = useState<Cargo>(usuario.papel);
-  const [senha, setSenha] = useState("");
   const [gradeIds, setGradeIds] = useState(usuario.grades.map((g) => g.id));
   const [salvando, setSalvando] = useState(false);
 
@@ -33,7 +32,7 @@ function ModalEdicaoUsuario({
     evento.preventDefault();
     setSalvando(true);
     try {
-      await onSalvar({ nome, email, papel, senha: senha || undefined, gradeIds });
+      await onSalvar({ nome, email, papel, gradeIds });
     } finally {
       setSalvando(false);
     }
@@ -64,10 +63,6 @@ function ModalEdicaoUsuario({
               <option value="recepcionista">Recepcionista</option>
             </select>
           </label>
-          <label>
-            Nova senha (opcional)
-            <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Deixe em branco pra manter a atual" />
-          </label>
           {papel !== "gestor" && (
             <label>
               Grades alocadas
@@ -97,7 +92,6 @@ export default function PrefeituraUsuarios() {
   const [gradeIds, setGradeIds] = useState<string[]>([]);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
   const [criando, setCriando] = useState(false);
 
   const [editando, setEditando] = useState<UsuarioAdmin | null>(null);
@@ -124,7 +118,7 @@ export default function PrefeituraUsuarios() {
     setGradesEdicao(lista.filter((g) => !g.excluida));
   }
 
-  async function salvarUsuario(dados: { nome: string; email: string; papel: string; senha?: string; gradeIds: string[] }) {
+  async function salvarUsuario(dados: { nome: string; email: string; papel: string; gradeIds: string[] }) {
     if (!editando) return;
     try {
       await api.atualizarUsuario(editando.id, dados);
@@ -164,7 +158,6 @@ export default function PrefeituraUsuarios() {
     setGradeIds([]);
     setNome("");
     setEmail("");
-    setSenha("");
   }
 
   useEffect(() => {
@@ -180,7 +173,7 @@ export default function PrefeituraUsuarios() {
 
   async function criar(evento: React.FormEvent) {
     evento.preventDefault();
-    if (!secretariaId || !nome.trim() || !email.trim() || !senha) return;
+    if (!secretariaId || !nome.trim() || !email.trim()) return;
     if (cargo === "atendente" && gradeIds.length === 0) {
       notificar("Escolha ao menos uma grade.", "erro");
       return;
@@ -188,7 +181,7 @@ export default function PrefeituraUsuarios() {
     setCriando(true);
     try {
       if (cargo === "gestor") {
-        await api.criarGestor(secretariaId, { nome: nome.trim(), email: email.trim(), senha });
+        await api.criarGestor(secretariaId, { nome: nome.trim(), email: email.trim() });
       } else {
         const unidadeID = grades.find((g) => gradeIds.includes(g.id))?.unidadeId ?? grades[0]?.unidadeId;
         if (!unidadeID) {
@@ -196,7 +189,7 @@ export default function PrefeituraUsuarios() {
           setCriando(false);
           return;
         }
-        await api.criarFuncionario(unidadeID, { nome: nome.trim(), email: email.trim(), senha, papel: cargo, gradeIds });
+        await api.criarFuncionario(unidadeID, { nome: nome.trim(), email: email.trim(), papel: cargo, gradeIds });
       }
       setModalAberto(false);
       notificar("Usuário criado.");
@@ -339,10 +332,6 @@ export default function PrefeituraUsuarios() {
               <label>
                 Email
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-              </label>
-              <label>
-                Senha
-                <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
               </label>
               <button type="submit" disabled={criando || (cargo === "atendente" && grades.length === 0)}>
                 {criando ? "Criando…" : "Criar"}

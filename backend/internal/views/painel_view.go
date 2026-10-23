@@ -21,24 +21,26 @@ func NomeExibicaoPainel(nomeUnidade, nomeGrade string) string {
 
 // PainelResponse monta a resposta pública de `GET /painel/{gradeId}` a partir de dado JÁ
 // RESOLVIDO pelo controller (grade, unidade, chamada atual da fila de exibição em memória,
-// lista de aguardando, últimas chamadas, cores da prefeitura) — pura decisão de formato, sem
-// nenhuma consulta própria. Ver skill painel-tv pro desenho completo (modo ativo/aguardando/
-// descanso, barra de contagem, voz).
+// últimas chamadas, cores da prefeitura) — pura decisão de formato, sem nenhuma consulta
+// própria. Ver skill painel-tv pro desenho completo (modo ativo/descanso, barra de contagem,
+// voz).
+//
+// Removido o modo "aguardando" (23/09, revertido 20/10): mantinha quem já tinha sido chamado
+// visível em destaque indefinidamente, até ser marcado ou outro atendente chamar alguém —
+// passava a impressão de tela travada quando os 30s normais da exibição já tinham passado há
+// muito. Agora a tabela de últimas chamadas simplesmente mostra todo mundo, sem exclusão —
+// quem ainda está "chamado" (não órfão) continua distinguível ali pelo ícone cinza
+// (`ehOrfao=false`, ver skill painel-tv), só não ocupa mais o destaque pra sempre.
 func PainelResponse(
 	grade *domain.Grade,
 	nomeUnidade string,
 	atual *painel.ItemExibicao,
 	expiraEm time.Time,
 	duracaoTotal time.Duration,
-	aguardando []repository.AguardandoExibicao,
 	ultimas []repository.ChamadaComDetalhe,
 	corDestaque, corClara any,
 ) map[string]any {
 	var atualJSON map[string]any
-	// protocolosEmDestaque: quem já está ocupando a área de destaque do painel (a chamada
-	// ativa OU os blocos de "aguardando") não deve aparecer DE NOVO na tabela de últimas
-	// chamadas embaixo.
-	protocolosEmDestaque := map[string]bool{}
 	if atual != nil {
 		atualJSON = map[string]any{
 			"protocolo": atual.Protocolo,
@@ -50,29 +52,10 @@ func PainelResponse(
 			"expiraEm":             expiraEm,
 			"duracaoTotalSegundos": int(duracaoTotal.Seconds()),
 		}
-		protocolosEmDestaque[atual.Protocolo] = true
-	}
-
-	// Modo "aguardando": só entra em jogo quando NÃO há nenhuma chamada nova ativa em
-	// destaque — nunca compete com a exibição normal (com narração), só ocupa o espaço quando
-	// ele está livre.
-	aguardandoJSON := []map[string]any{}
-	if atual == nil {
-		for _, ag := range aguardando {
-			aguardandoJSON = append(aguardandoJSON, map[string]any{
-				"protocolo": ag.Protocolo,
-				"nome":      ag.Nome,
-				"guiche":    ag.GuicheNome,
-			})
-			protocolosEmDestaque[ag.Protocolo] = true
-		}
 	}
 
 	listaJSON := []map[string]any{}
 	for _, c := range ultimas {
-		if protocolosEmDestaque[c.Protocolo] {
-			continue
-		}
 		listaJSON = append(listaJSON, map[string]any{
 			"id":        c.ChamadaID,
 			"protocolo": c.Protocolo,
@@ -94,7 +77,6 @@ func PainelResponse(
 		"corDestaque":     corDestaque,
 		"corClara":        corClara,
 		"chamadaAtual":    atualJSON,
-		"aguardando":      aguardandoJSON,
 		"ultimasChamadas": listaJSON,
 	}
 }
